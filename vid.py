@@ -10,6 +10,7 @@ import numpy as np
 import cv2
 import scipy.ndimage
 from bokeh.io import show, push_notebook
+from bokeh.models.annotations import Title, LabelSet
 import time
 
 # imports custom libraries
@@ -148,18 +149,31 @@ def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=0,
 
 
 def view_video(vid_filepath, start_frame, pix_per_um, time_sleep=0.3, 
-               brightness=1.0, vert_flip=0):
+               brightness=1.0, vert_flip=0, show_frame_num=False):
     """
     vert_flip:  # code for flipping vertically with cv2.flip()
     Functions and setup were adapted from:
     https://stackoverflow.com/questions/27882255/is-it-possible-to-display-an-opencv-video-inside-the-ipython-jupyter-notebook
     """
     p, im, cap = show_frame(vid_filepath, start_frame, pix_per_um, brightness=brightness)
+    if show_frame_num:
+        f = start_frame
     while True:
         ret, frame = cap.read()
+        # displays frame number on lower-left of screen
+        if show_frame_num:
+            f += 1
+            white = (255, 255, 255)
+            h = frame.shape[0]
+            frame = cv2.putText(img=frame, text=str(f), org=(10, h-10), 
+                                    fontFace=0, fontScale=2, color=white, 
+                                    thickness=3)
+        # formats frame for viewing
         frame = improc.adjust_brightness(improc.bokehfy(
                 frame, vert_flip=vert_flip), brightness)
+        # displays frame
         im.data_source.data['image']=[frame]
         push_notebook()
+        # waits before showing the next frame
         time.sleep(time_sleep)
     

@@ -6,7 +6,6 @@ using OpenCV with displays in Bokeh.
 # imports standard libraries
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import pandas as pd
 from collections import OrderedDict
 import time
@@ -14,8 +13,7 @@ import time
 # imports bokeh modules
 from bokeh.plotting import figure
 from bokeh.io import show, push_notebook
-from bokeh.models.annotations import Title, LabelSet
-from bokeh.models import ColumnDataSource
+from bokeh.models.annotations import Title
 from bokeh.layouts import gridplot
 
 # imports image-processing-specific libraries 
@@ -30,7 +28,6 @@ import scipy.ndimage
 
 # imports custom libraries
 import vid
-import ui
 import fn
 
 # imports custom classes (with reload clauses)
@@ -39,17 +36,46 @@ import classes
 reload(classes)
 from classes import Bubble
 
-def adjust_brightness(frame, brightness):
+
+def adjust_brightness(im, brightness, sat=255):
     """
-    Adjusts brightness of RGBA (Bokeh-formatted) image.
-    """
-    rgb = frame[:,:,:3]
-    rgb = rgb.astype(float)
-    rgb *= brightness
-    rgb[rgb >= 255] = 255
-    frame[:,:,:3] = rgb.astype('uint8')
+    Adjusts brightness of image by scaling all pixels by the 
+    `brightness` parameter.
     
-    return frame
+    Parameters
+    ----------
+    im : (M, N, P) numpy array
+        Image whose brightness is scaled. P >= 3,
+        so RGB, BGR, RGBA acceptable.
+    brightness : float
+        Scaling factor for pixel values. If < 0, returns junk.
+    sat : int
+        Saturation value for pixels (usually 255 for uint8)
+    
+    Returns
+    -------
+    im : (M, N, P) numpy array
+        Original image with pixel values scaled          
+        
+    """
+    # if image is 4-channel (e.g., RGBA) extracts first 3
+    is_rgba = (len(im.shape) == 3) and (im.shape[3] == 4)
+    if is_rgba:
+        im_to_scale = im[:,:,:3]
+    else:
+        im_to_scale = im
+    # scales pixel values in image
+    im_to_scale = im_to_scale.astype(float)
+    im_to_scale *= brightness
+    # sets oversaturated values to saturation value
+    im_to_scale[im_to_scale >= sat] = sat
+    # loads result into original image
+    if is_rgba:
+        im[:,:,:3] = im_to_scale.astype('uint8')
+    else:
+        im = im_to_scale.astype('uint8')
+    
+    return im
 
 
 def average_rgb(im):
@@ -57,13 +83,16 @@ def average_rgb(im):
     Given an RGB image, averages RGB to produce b-w image.
     Note that the order of RGB is not important for this.
     
-    Parameters:
-        im : (M x N x 3) numpy array of floats or ints
-            RGB image to average
+    Parameters
+    ----------
+    im : (M x N x 3) numpy array of floats or ints
+        RGB image to average
             
-    Returns:
-        im_rgb_avg : (M x N) numpy array of floats or ints
-            Black-and-white image of averaged RGB
+    Returns
+    -------
+    im_rgb_avg : (M x N) numpy array of floats or ints
+        Black-and-white image of averaged RGB
+    
     """
     # ensures that the image is indeed in suitable RGB format
     assert im.shape[2] == 3, "Image must be RGB (M x N x 3 array)."
@@ -74,8 +103,48 @@ def average_rgb(im):
 
 
 def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr, 
-                   flow_dir, fps, pix_per_um):
+                   flow_dir, fps, pix_per_um, width_border):
     """
+    Assigns Bubble objects with unique IDs to the labeled objects on the video
+    frame provided. This method is used on a single frame in the context of
+    processing an entire video and uses information from the previous frame.
+    Inspired by and partially copied from PyImageSearch [1].
+    
+    Updates bubbles_prev and bubbles_archive in place.
+    
+    Parameters
+    ----------
+    frame_labeled : (M x N) numpy array of uint8
+        Video frame with objects labeled with unique numbers. They only need
+        to be unique so regionprops() can distinguish them. These are not
+        the values used to determine unique ID numbers for the bubbles.
+    f : int
+        Frame number from video
+    bubbles_prev : OrderedDict of dictionaries
+        Ordered dictionary of dictionaries of properties of bubbles 
+        from the previous frame
+    bubbles_archive : OrderedDict of Bubble objects
+        Ordered dictionary of bubbles from all previous frames
+    ID_curr : int
+        Next ID number to be assigned (increasing order)
+    flow_dir : numpy array of 2 floats
+        Unit vector indicating the flow direction
+    fps : float
+        Frames per second of video
+    pix_per_um : float
+        Conversion of pixels per micron (um)
+    width_border : int
+        Number of pixels to remove from border for image processign in
+        highlight_bubble()
+        
+    Returns
+    -------
+    ID_curr : int
+        Updated value of next ID number to assign.        
+     
+    References
+    ----------
+    .. [1] https://www.pyimagesearch.com/2018/07/23/simple-object-tracking-with-opencv/
     """
     
     # identifies the different objects in the frame
@@ -83,32 +152,41 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
     # creates dictionaries of properties for each object
     bubbles_curr = []
     for i, props in enumerate(region_props):
+        # creates dictionary of bubble properties for one frame, which
+        # can be merged to a Bubble object
         bubble = {}
         bubble['centroid'] = props.centroid
         bubble['area'] = props.area
         bubble['frame'] = f
+        bubble['on border'] = is_on_border(props.bbox, 
+              frame_labeled, width_border)
+        # adds dictionary for this bubble to list of bubbles in current frame
         bubbles_curr += [bubble]
         
-    # assigns bubbles in current frames to new objects if none seen previously 
+    # if no bubbles seen in previous frame, assigns bubbles in current frame
+    # to new bubble IDs 
     if len(bubbles_prev) == 0:
         for i in range(len(bubbles_curr)):
             bubbles_prev[ID_curr] = bubbles_curr[i]
             ID_curr += 1
-    # deletes previously seen bubbles if no bubbles in current frame
+   
+    # if no bubbles in current frame, removes bubbles from dictionary of
+    # bubbles in the previous frame
     elif len(bubbles_curr) == 0:
         for ID in bubbles_prev.keys():
-            # removes bubble from dictionary for previous frame
             del bubbles_prev[ID]         
-    # assigns bubbles in current frames to previous objects based on distance 
-    # off flow axis and other parameters
+   
+    # otherwise, assigns bubbles in current frames to previous objects based
+    # on distance off flow axis and other parameters (see bubble_distance())
     else:
-        # grabs the set of object IDs and corresponding centroids from the 
-        # previous frame
+        # grabs the set of object IDs from the previous farme
         IDs = list(bubbles_prev.keys())
-        # M x N matrix of distances (M = # past objects, N = # curr objects)
-        d_mat = bubble_d_mat(list(bubbles_prev.values()), bubbles_curr, flow_dir)
+        # computes M x N matrix of distances (M = # bubbles in previous frame,
+        # N = # bubbles in current frame)
+        d_mat = bubble_d_mat(list(bubbles_prev.values()), 
+                             bubbles_curr, flow_dir)
         
-        ### the next part is copied from https://www.pyimagesearch.com/2018/07/23/simple-object-tracking-with-opencv/ ###
+        ### SOURCE: Much of the next is directly copied from [1]
         # in order to perform this matching we must (1) find the
         # smallest value in each row and then (2) sort the row
         # indexes based on their minimum values so that the row
@@ -124,20 +202,27 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
         # of the rows and column indexes we have already examined
         rows_used = set()
         cols_used = set()
+        
         # loops over the combination of the (row, column) index
         # tuples
         for (row, col) in zip(rows, cols):
             # if we have already examined either the row or
-            # column value before, ignore it
-            # val
+            # column value before, ignores it
             if row in rows_used or col in cols_used:
                 continue
-            # otherwise, grab the object ID for the current row,
+            # also ignores pairings where the second bubble is upstream
+            # these pairings are marked with a penalty that is 
+            # larger than the largest distance across the frame
+            d_longest = np.linalg.norm(frame_labeled.shape)
+            if d_mat[row, col] > d_longest:
+                continue
+            
+            # otherwise, grabs the object ID for the current row,
             # set its new centroid, and reset the disappeared
             # counter
             ID = IDs[row]
             bubbles_prev[ID] = bubbles_curr[col]
-            # indicate that we have examined each of the row and
+            # indicates that we have examined each of the row and
             # column indexes, respectively
             rows_used.add(row)
             cols_used.add(col)
@@ -147,27 +232,18 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
         rows_unused = set(range(0, d_mat.shape[0])).difference(rows_used)
         cols_unused = set(range(0, d_mat.shape[1])).difference(cols_used)
         
-        # in the event that the number of object centroids is
-        # equal or greater than the number of input centroids
-        # we need to check and see if some of these objects have
-        # potentially disappeared
-        # TODO test this section with video containing multiple bubbles in a frame
-        if d_mat.shape[0] >= d_mat.shape[1]:
-            # loop over the unused row indexes
-            for row in rows_unused:
-                # grab the object ID for the corresponding row
-                # index and save to archive
-                ID = IDs[row]
-                # removes bubble from dictionary for previous frame
-                del bubbles_prev[ID]
+        # loops over the unused row indexes to remove bubbles that disappeared
+        for row in rows_unused:
+            # grabs the object ID for the corresponding row
+            # index and save to archive
+            ID = IDs[row]
+            # removes bubble from dictionary for previous frame
+            del bubbles_prev[ID]
 
-        # otherwise, if the number of input centroids is greater
-        # than the number of existing object centroids we need to
-        # register each new input centroid as a bubble seen
-        else:
-            for col in cols_unused:
-                bubbles_prev[ID_curr] = bubbles_curr[col]
-                ID_curr += 1
+        # registers each unregistered new input centroid as a bubble seen
+        for col in cols_unused:
+            bubbles_prev[ID_curr] = bubbles_curr[col]
+            ID_curr += 1
      
     # archives bubbles from this frame in order of increasing ID
     for ID in bubbles_prev.keys():
@@ -183,35 +259,49 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
     return ID_curr
 
 
-def bokehfy(frame, vert_flip=0):
+def bokehfy(im, vert_flip=0):
     """
+    Formats image for display with Bokeh. Can accommodate boolean, 0-1 scaled
+    floats, and 0-255 scaled uint8 images.
+    
+    Parameters
+    ----------
+    im : numpy array
+        Image to be formatted for Bokeh
+    vert_flip : int
+        Flag indcating if the image should be flipped. 0 flips vertically 
+        with cv2.flip().
+        
+    Returns
+    -------
+    im : numpy array
+        Original image formatted for display with Bokeh.
     """
     # converts boolean images to uint8
-    if frame.dtype == 'bool':
-        frame = 255*frame.astype('uint8')
+    if im.dtype == 'bool':
+        im = 255*im.astype('uint8')
     # converts 0-1 scale float to 0-255 scale uint8
-    elif frame.dtype == 'float':
+    elif im.dtype == 'float':
         # multiplies by 255 if scaled by 1
-        if np.max(frame) <= 1.0:
-            frame *= 255
+        if np.max(im) <= 1.0:
+            im *= 255
         # converts to uint8
-        frame = frame.astype('uint8')
+        im = im.astype('uint8')
     # converts BGR images to RGBA (from CV2, which uses BGR instead of RGB)
-    if len(frame.shape) == 3:
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA) # because Bokeh expects a RGBA image
+    if len(im.shape) == 3:
+        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGBA) # because Bokeh expects a RGBA image
     # converts gray scale (2d) images to RGBA
-    elif len(frame.shape) == 2:
-        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGBA)
-    frame = cv2.flip(frame, vert_flip) # because Bokeh flips vertically
+    elif len(im.shape) == 2:
+        im = cv2.cvtColor(im, cv2.COLOR_GRAY2RGBA)
+    im = cv2.flip(im, vert_flip) # because Bokeh flips vertically
     
-    return frame
+    return im
                
 
-def bubble_distance(bubble1, bubble2, axis, reverse_penalty=1E10):
+def bubble_distance(bubble1, bubble2, axis, upstream_penalty=1E10):
     """
     Computes the distance between each pair of points in the two sets
     perpendicular to the axis. All inputs must be numpy arrays.
-    # TODO somehow reject points where the second is upstream of the first
     # TODO incorporate velocity profile into objective
     """
     c1 = np.array(bubble1['centroid'])
@@ -223,7 +313,7 @@ def bubble_distance(bubble1, bubble2, axis, reverse_penalty=1E10):
     proj =  comp*axis
     d_off_axis = np.linalg.norm(diff - proj)
     # adds huge penalty if second bubble is upstream of first bubble
-    d = d_off_axis + reverse_penalty*(comp < 0)
+    d = d_off_axis + upstream_penalty*(comp < 0)
     
     return d
 
@@ -241,7 +331,6 @@ def bubble_d_mat(bubbles1, bubbles2, axis):
             d_mat[i,j] = bubble_distance(bubble1, bubble2, axis)
             
     return d_mat
-
 
     
 def format_frame(frame, pix_per_um, fig_size_red, brightness=1.0, title=None):
@@ -330,7 +419,7 @@ def get_val_channel(frame, selem=None):
     return val
 
     
-def highlight_bubble(frame, ref_frame, thresh, width_frame, selem, min_size):
+def highlight_bubble(frame, ref_frame, thresh, width_border, selem, min_size):
     """
     Highlights bubbles (regions of different brightness) with white and
     turns background black. Ignores edges of the frame.
@@ -351,14 +440,14 @@ def highlight_bubble(frame, ref_frame, thresh, width_frame, selem, min_size):
     # fills enclosed holes with white, but leaves open holes black
     bubble_part_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_bw)    
     # removes any white pixels slightly inside the border of the image
-    mask_full = np.ones([bubble_part_filled.shape[0]-2*width_frame, 
-                        bubble_part_filled.shape[1]-2*width_frame])
+    mask_full = np.ones([bubble_part_filled.shape[0]-2*width_border, 
+                        bubble_part_filled.shape[1]-2*width_border])
     mask_deframe = np.zeros_like(bubble_part_filled)
-    mask_deframe[width_frame:-width_frame,width_frame:-width_frame] = mask_full
+    mask_deframe[width_border:-width_border,width_border:-width_border] = mask_full
     mask_frame_sides = np.logical_not(mask_deframe)
     # make the tops and bottoms black so only the sides are kept
-    mask_frame_sides[0:width_frame,:] = 0
-    mask_frame_sides[-width_frame:-1,:] = 0
+    mask_frame_sides[0:width_border,:] = 0
+    mask_frame_sides[-width_border:-1,:] = 0
     # frames sides of filled bubble image
     bubble_framed = np.logical_or(bubble_part_filled, mask_frame_sides)
     # fills in open space in the middle of the bubble that might not get
@@ -371,6 +460,23 @@ def highlight_bubble(frame, ref_frame, thresh, width_frame, selem, min_size):
     return bubble
 
 
+def is_on_border(bbox, im, width_border):
+    """
+    Checks if object is on the border of the frame.
+    
+    bbox is (min_row, min_col, max_row, max_col). Pixels belonging to the 
+    bounding box are in the half-open interval [min_row; max_row) and 
+    [min_col; max_col).
+    """
+    min_col = bbox[1]
+    max_col = bbox[3] 
+    width_im = im.shape[1]
+    if (min_col <= width_border) or (max_col >= width_im - width_border):
+        return True
+    else:
+        return False
+    
+    
 def linked_four_frames(four_frames, pix_per_um, fig_size_red, show_fig=True):
     """
     Shows four frames with linked panning and zooming.
@@ -676,7 +782,7 @@ def thresh_im(im, thresh=-1, c=5):
 
 
 def track_bubble(vid_filepath, n_ref, thresh, flow_dir, pix_per_um,
-                 width_frame=10, selem=None, ret_IDs=False,
+                 width_border=10, selem=None, ret_IDs=False,
                  min_size=None, start_frame=0, end_frame=-1, skip=1):
     """
     """
@@ -699,11 +805,11 @@ def track_bubble(vid_filepath, n_ref, thresh, flow_dir, pix_per_um,
         frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
         val = get_val_channel(frame, selem=selem)
         # highlights bubbles in the given frame
-        bubbles_bw = highlight_bubble(val, ref_val, thresh, width_frame, selem, min_size)
+        bubbles_bw = highlight_bubble(val, ref_val, thresh, width_border, selem, min_size)
         # finds bubbles and assigns IDs to track them, saving to archive
         frame_labeled = skimage.measure.label(bubbles_bw)
         ID_curr = assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive,
-                                 ID_curr, flow_dir, fps, pix_per_um)
+                                 ID_curr, flow_dir, fps, pix_per_um, width_border)
 
     # only returns IDs for each frame if requested
     if ret_IDs:
@@ -714,7 +820,7 @@ def track_bubble(vid_filepath, n_ref, thresh, flow_dir, pix_per_um,
 
     
 def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_um, 
-                      width_frame=10, selem=None, min_size=None, start_frame=0, 
+                      width_border=10, selem=None, min_size=None, start_frame=0, 
                       end_frame=-1, skip=1, num_colors=10, time_sleep=2, 
                       brightness=3.0, fig_size_red=0.5):
     """
@@ -738,27 +844,22 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_u
         frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
         val = get_val_channel(frame, selem=selem) 
         # processes frame
-        bubble = highlight_bubble(val, ref_val, thresh, width_frame, selem, min_size)
+        bubble = highlight_bubble(val, ref_val, thresh, width_border, selem, min_size)
         # labels bubbles
         frame_labeled, num_labels = skimage.measure.label(bubble, return_num=True)
-#        # ensures that the same number of IDs are provided as objects found
-#        assert len(frame_IDs[f]) == num_labels, \
-#            'improc.test_track_bubble() has label mismatch for frame {0:d}.'.format(f) \
-#            + 'num_labels = {0:d} and number of frame_IDs = {1:d}'.format(num_labels, len(frame_IDs[f]))
-        # gets IDs of bubbles in the present frame
+        # ensures that the same number of IDs are provided as objects found
+        assert len(frame_IDs[f]) == num_labels, \
+            'improc.test_track_bubble() has label mismatch for frame {0:d}.'.format(f) \
+            + 'num_labels = {0:d} and number of frame_IDs = {1:d}'.format(num_labels, len(frame_IDs[f]))
+        # assigns IDs to pixels of each bubble--sort of helps with color-coding
         IDs = frame_IDs[f]
-#        new_frame = np.zeros([bubble.shape[0], bubble.shape[1]])
-#        for ID in IDs:
-#            # assigns color on looping basis
-#            r,g,b,a = cmap((ID%num_colors)/num_colors)
-#            color = (255*np.array([r,g,b])).astype('uint8')
-#            print(color)
-#            # finds label associated with the bubble with this id
-#            rc, cc = centroids[ID]
-#            label = frame_labeled[int(rc), int(cc)]
-#            new_frame[frame_labeled==label] = ID%num_colors
-       
-        frame_colored = skimage.color.label2rgb(frame_labeled, image=frame, 
+        frame_relabeled = np.zeros(frame_labeled.shape)
+        for ID in IDs:
+            # finds label associated with the bubble with this id
+            rc, cc = bubbles[ID].get_prop('centroid', f)
+            label = frame_labeled[int(rc), int(cc)]
+            frame_relabeled[frame_labeled==label] = (ID+1)%255 # re-indexes from 1
+        frame_colored = skimage.color.label2rgb(frame_relabeled, image=frame, 
                                                 bg_label=0)
  
         # converts frame from one-scaled to 255-scaled
@@ -768,8 +869,13 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_u
             x = int(centroid[1])
             y = int(centroid[0])
             white = (255, 255, 255)
+            black = (0, 0, 0)
+            if bubbles[ID].get_prop('on border', f):
+                color = black
+            else:
+                color = white
             frame_disp = cv2.putText(img=frame_disp, text=str(ID), org=(x, y), 
-                                    fontFace=0, fontScale=2, color=white, 
+                                    fontFace=0, fontScale=2, color=color, 
                                     thickness=3)
         frame_disp = adjust_brightness(bokehfy(frame_disp), brightness)
         im.data_source.data['image']=[frame_disp]

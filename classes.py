@@ -22,16 +22,20 @@ class Bubble:
         average area: float
         average speed: float
         fps: float
+        
+        true centroid is estimated location of centroid adjusted after taking
+        account of the bubble being off screen/"on border."
         """
         # stores metadata
         self.metadata = {'ID':ID, 'fps':fps, 'frame_dim':frame_dim,
                          'flow_dir':flow_dir, 'pix_per_um':pix_per_um}
         # initializes storage of raw properties
         self.props_raw = {'frame':[], 'centroid':[], 'area':[],'major axis':[],
-                          'minor axis':[], 'orientation':[]}
+                          'minor axis':[], 'orientation':[], 'on border':[]}
         # initializes storage of processed properties
         self.props_proc = {'average area':None, 'average speed':None, 
-                           'average orientation':None, 'average aspect ratio':None}
+                           'average orientation':None, 
+                           'average aspect ratio':None, 'true centroids':[]}
         # loads raw properties if provided
         if len(props_raw) > 0:
             self.add_props(props_raw)
