@@ -59,7 +59,7 @@ def adjust_brightness(im, brightness, sat=255):
         
     """
     # if image is 4-channel (e.g., RGBA) extracts first 3
-    is_rgba = (len(im.shape) == 3) and (im.shape[3] == 4)
+    is_rgba = (len(im.shape) == 3) and (im.shape[2] == 4)
     if is_rgba:
         im_to_scale = im[:,:,:3]
     else:
@@ -419,7 +419,8 @@ def get_val_channel(frame, selem=None):
     return val
 
     
-def highlight_bubble(frame, ref_frame, thresh, width_border, selem, min_size):
+def highlight_bubble(frame, ref_frame, thresh, width_border, selem, min_size,
+                     ret_all_steps=False):
     """
     Highlights bubbles (regions of different brightness) with white and
     turns background black. Ignores edges of the frame.
@@ -434,7 +435,8 @@ def highlight_bubble(frame, ref_frame, thresh, width_border, selem, min_size):
     # smooths out thresholded image
     closed_bw = skimage.morphology.binary_closing(thresh_bw, selem=selem)
     # removes small objects
-    bubble_bw = skimage.morphology.remove_small_objects(closed_bw.astype(bool), min_size=min_size)
+    bubble_bw = skimage.morphology.remove_small_objects(closed_bw.astype(bool),
+                                                        min_size=min_size)
     # converts image to uint8 type from bool
     bubble_bw = 255*bubble_bw.astype('uint8')
     # fills enclosed holes with white, but leaves open holes black
@@ -457,7 +459,12 @@ def highlight_bubble(frame, ref_frame, thresh, width_border, selem, min_size):
     bubble = mask_im(bubble_filled, np.logical_not(mask_frame_sides))
     bubble = 255*bubble.astype('uint8')
     
-    return bubble
+    # returns intermediate steps if requeseted.
+    if ret_all_steps:
+        return im_diff, thresh_bw, closed_bw, bubble_bw, \
+                bubble_part_filled, bubble
+    else:
+        return bubble
 
 
 def is_on_border(bbox, im, width_border):
