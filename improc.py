@@ -1,0 +1,779 @@
+"""
+improc.py contains definitions of methods for image-processing
+using OpenCV with displays in Bokeh.
+"""
+
+# imports standard libraries
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import pandas as pd
+from collections import OrderedDict
+import time
+
+# imports bokeh modules
+from bokeh.plotting import figure
+from bokeh.io import show, push_notebook
+from bokeh.models.annotations import Title, LabelSet
+from bokeh.models import ColumnDataSource
+from bokeh.layouts import gridplot
+
+# imports image-processing-specific libraries 
+import skimage.morphology
+import sklearn.cluster
+import skimage.measure
+import skimage.color
+import skimage.segmentation
+import skimage.feature
+import cv2
+import scipy.ndimage
+
+# imports custom libraries
+import vid
+import ui
+import fn
+
+# imports custom classes (with reload clauses)
+from importlib import reload
+import classes
+reload(classes)
+from classes import Bubble
+
+def adjust_brightness(frame, brightness):
+    """
+    Adjusts brightness of RGBA (Bokeh-formatted) image.
+    """
+    rgb = frame[:,:,:3]
+    rgb = rgb.astype(float)
+    rgb *= brightness
+    rgb[rgb >= 255] = 255
+    frame[:,:,:3] = rgb.astype('uint8')
+    
+    return frame
+
+
+def average_rgb(im):
+    """
+    Given an RGB image, averages RGB to produce b-w image.
+    Note that the order of RGB is not important for this.
+    
+    Parameters:
+        im : (M x N x 3) numpy array of floats or ints
+            RGB image to average
+            
+    Returns:
+        im_rgb_avg : (M x N) numpy array of floats or ints
+            Black-and-white image of averaged RGB
+    """
+    # ensures that the image is indeed in suitable RGB format
+    assert im.shape[2] == 3, "Image must be RGB (M x N x 3 array)."
+    # computes average over RGB values
+    res = np.round(np.mean(im, 2))
+    # converts to uint8
+    return res.astype('uint8')
+
+
+def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr, 
+                   flow_dir, fps, pix_per_um):
+    """
+    """
+    
+    # identifies the different objects in the frame
+    region_props = skimage.measure.regionprops(frame_labeled)
+    # creates dictionaries of properties for each object
+    bubbles_curr = []
+    for i, props in enumerate(region_props):
+        bubble = {}
+        bubble['centroid'] = props.centroid
+        bubble['area'] = props.area
+        bubble['frame'] = f
+        bubbles_curr += [bubble]
+        
+    # assigns bubbles in current frames to new objects if none seen previously 
+    if len(bubbles_prev) == 0:
+        for i in range(len(bubbles_curr)):
+            bubbles_prev[ID_curr] = bubbles_curr[i]
+            ID_curr += 1
+    # deletes previously seen bubbles if no bubbles in current frame
+    elif len(bubbles_curr) == 0:
+        for ID in bubbles_prev.keys():
+            # removes bubble from dictionary for previous frame
+            del bubbles_prev[ID]         
+    # assigns bubbles in current frames to previous objects based on distance 
+    # off flow axis and other parameters
+    else:
+        # grabs the set of object IDs and corresponding centroids from the 
+        # previous frame
+        IDs = list(bubbles_prev.keys())
+        # M x N matrix of distances (M = # past objects, N = # curr objects)
+        d_mat = bubble_d_mat(list(bubbles_prev.values()), bubbles_curr, flow_dir)
+        
+        ### the next part is copied from https://www.pyimagesearch.com/2018/07/23/simple-object-tracking-with-opencv/ ###
+        # in order to perform this matching we must (1) find the
+        # smallest value in each row and then (2) sort the row
+        # indexes based on their minimum values so that the row
+        # with the smallest value is at the *front* of the index
+        # list
+        rows = d_mat.min(axis=1).argsort()
+        # next, we perform a similar process on the columns by
+        # finding the smallest value in each column and then
+        # sorting using the previously computed row index list
+        cols = d_mat.argmin(axis=1)[rows]
+        # in order to determine if we need to update, register,
+        # or deregister an object we need to keep track of which
+        # of the rows and column indexes we have already examined
+        rows_used = set()
+        cols_used = set()
+        # loops over the combination of the (row, column) index
+        # tuples
+        for (row, col) in zip(rows, cols):
+            # if we have already examined either the row or
+            # column value before, ignore it
+            # val
+            if row in rows_used or col in cols_used:
+                continue
+            # otherwise, grab the object ID for the current row,
+            # set its new centroid, and reset the disappeared
+            # counter
+            ID = IDs[row]
+            bubbles_prev[ID] = bubbles_curr[col]
+            # indicate that we have examined each of the row and
+            # column indexes, respectively
+            rows_used.add(row)
+            cols_used.add(col)
+            
+        # computes both the row and column index we have NOT yet
+        # examined
+        rows_unused = set(range(0, d_mat.shape[0])).difference(rows_used)
+        cols_unused = set(range(0, d_mat.shape[1])).difference(cols_used)
+        
+        # in the event that the number of object centroids is
+        # equal or greater than the number of input centroids
+        # we need to check and see if some of these objects have
+        # potentially disappeared
+        # TODO test this section with video containing multiple bubbles in a frame
+        if d_mat.shape[0] >= d_mat.shape[1]:
+            # loop over the unused row indexes
+            for row in rows_unused:
+                # grab the object ID for the corresponding row
+                # index and save to archive
+                ID = IDs[row]
+                # removes bubble from dictionary for previous frame
+                del bubbles_prev[ID]
+
+        # otherwise, if the number of input centroids is greater
+        # than the number of existing object centroids we need to
+        # register each new input centroid as a bubble seen
+        else:
+            for col in cols_unused:
+                bubbles_prev[ID_curr] = bubbles_curr[col]
+                ID_curr += 1
+     
+    # archives bubbles from this frame in order of increasing ID
+    for ID in bubbles_prev.keys():
+        # creates new ordered dictionary of bubbles if new bubble
+        if ID == len(bubbles_archive):
+            bubbles_archive[ID] = Bubble(ID, fps, frame_labeled.shape, flow_dir, 
+                           pix_per_um, props_raw=bubbles_prev[ID])
+        elif ID < len(bubbles_archive):
+            bubbles_archive[ID].add_props(bubbles_prev[ID])
+        else:
+            print('In assign_bubbles(), IDs looped out of order while saving to archive.')
+                
+    return ID_curr
+
+
+def bokehfy(frame, vert_flip=0):
+    """
+    """
+    # converts boolean images to uint8
+    if frame.dtype == 'bool':
+        frame = 255*frame.astype('uint8')
+    # converts 0-1 scale float to 0-255 scale uint8
+    elif frame.dtype == 'float':
+        # multiplies by 255 if scaled by 1
+        if np.max(frame) <= 1.0:
+            frame *= 255
+        # converts to uint8
+        frame = frame.astype('uint8')
+    # converts BGR images to RGBA (from CV2, which uses BGR instead of RGB)
+    if len(frame.shape) == 3:
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA) # because Bokeh expects a RGBA image
+    # converts gray scale (2d) images to RGBA
+    elif len(frame.shape) == 2:
+        frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGBA)
+    frame = cv2.flip(frame, vert_flip) # because Bokeh flips vertically
+    
+    return frame
+               
+
+def bubble_distance(bubble1, bubble2, axis, reverse_penalty=1E10):
+    """
+    Computes the distance between each pair of points in the two sets
+    perpendicular to the axis. All inputs must be numpy arrays.
+    # TODO somehow reject points where the second is upstream of the first
+    # TODO incorporate velocity profile into objective
+    """
+    c1 = np.array(bubble1['centroid'])
+    c2 = np.array(bubble2['centroid'])
+    diff = c2 - c1
+    # computes component of projection along axis
+    comp = np.dot(diff, axis)
+    # computes projection along flow axis
+    proj =  comp*axis
+    d_off_axis = np.linalg.norm(diff - proj)
+    # adds huge penalty if second bubble is upstream of first bubble
+    d = d_off_axis + reverse_penalty*(comp < 0)
+    
+    return d
+
+
+def bubble_d_mat(bubbles1, bubbles2, axis):
+    """
+    Computes the distance between each pair of bubbles and organizes into a 
+    matrix.
+    """
+    M = len(bubbles1)
+    N = len(bubbles2)
+    d_mat = np.zeros([M, N])
+    for i, bubble1 in enumerate(bubbles1):
+        for j, bubble2 in enumerate(bubbles2):
+            d_mat[i,j] = bubble_distance(bubble1, bubble2, axis)
+            
+    return d_mat
+
+
+    
+def format_frame(frame, pix_per_um, fig_size_red, brightness=1.0, title=None):
+    frame = adjust_brightness(frame, brightness)
+    width = frame.shape[1]
+    height= frame.shape[0]
+    width_um = int(width / pix_per_um)
+    height_um = int(height / pix_per_um)
+    width_fig = int(width*fig_size_red)
+    height_fig = int(height*fig_size_red)
+    p = figure(x_range=(0,width_um), y_range=(0,height_um), output_backend="webgl", width=width_fig, height=height_fig, title=title)
+    p.xaxis.axis_label = 'width [um]'
+    p.yaxis.axis_label = 'height [um]'
+    im = p.image_rgba(image=[frame], x=0, y=0, dw=width_um, dh=height_um)
+    
+    return p, im
+   
+
+def get_angle_correction(im_labeled):
+    """
+    correction of length due to offset angle of stream
+    """
+    rows, cols = np.where(im_labeled)
+    # upper left (row, col)
+    ul = (np.min(rows[cols==np.min(cols)]), np.min(cols))
+    # upper right (row, col)
+    ur = (np.min(rows[cols==np.max(cols)]), np.max(cols))
+    # bottom left (row, col)
+    bl = (np.max(rows[cols==np.min(cols)]), np.min(cols))
+    # bottom right (row, col)
+    br = (np.max(rows[cols==np.max(cols)]), np.max(cols))
+    # angle along upper part of stream
+    th_u = np.arctan((ul[0]-ur[0])/(ul[1]-ur[1]))
+    # angle along lower part of stream
+    th_b = np.arctan((bl[0]-br[0])/(bl[1]-br[1]))
+    # compute correction by taking cosine of mean offset angle
+    angle_correction = np.cos(np.mean(np.array([th_u, th_b])))
+
+    return angle_correction
+
+
+def get_frame_IDs(bubbles_archive, start_frame, end_frame, skip):
+    """Returns list of IDs of bubbles in each frame"""
+    # initializes dictionary of IDs for each frame
+    frame_IDs = {}
+    for f in range(start_frame, end_frame, skip):
+        frame_IDs[f] = []
+    # loads IDs of bubbles found in each frame 
+    for ID in bubbles_archive.keys():
+        bubble = bubbles_archive[ID]
+        frames = bubble.get_props('frame')
+        for f in frames:
+            frame_IDs[f] += [ID]
+                
+    return frame_IDs
+
+
+def get_points(Npoints=1,im=None):
+    """ Alter the built in ginput function in matplotlib.pyplot for custom use.
+    This version switches the function of the left and right mouse buttons so
+    that the user can pan/zoom without adding points. NOTE: the left mouse
+    button still removes existing points.
+    INPUT:
+        Npoints = int - number of points to get from user clicks.
+    OUTPUT:
+        pp = list of tuples of (x,y) coordinates on image
+    """
+    if im is not None:
+        plt.imshow(im)
+        plt.axis('image')
+
+    pp = plt.ginput(n=Npoints,mouse_add=3, mouse_pop=1, mouse_stop=2,
+                    timeout=0)
+    return pp
+
+
+def get_val_channel(frame, selem=None):
+    """
+    Returns the value channel of the given frame.
+    """
+    # Convert reference frame to HSV
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    # Only interested in "value" channel to distinguish bubbles, filters result
+    val = skimage.filters.median(hsv[:,:,2], selem=selem).astype('uint8')
+    
+    return val
+
+    
+def highlight_bubble(frame, ref_frame, thresh, width_frame, selem, min_size):
+    """
+    Highlights bubbles (regions of different brightness) with white and
+    turns background black. Ignores edges of the frame.
+    Only accepts 2D frames.
+    """
+    assert (len(frame.shape) == 2) and (len(ref_frame.shape) == 2), 'improc.highlight_bubble() only accepts 2D frames.'
+    
+    # subtracts reference image from current image (value channel)
+    im_diff = cv2.absdiff(ref_frame, frame)
+    # thresholds image to become black-and-white
+    thresh_bw = thresh_im(im_diff, thresh)
+    # smooths out thresholded image
+    closed_bw = skimage.morphology.binary_closing(thresh_bw, selem=selem)
+    # removes small objects
+    bubble_bw = skimage.morphology.remove_small_objects(closed_bw.astype(bool), min_size=min_size)
+    # converts image to uint8 type from bool
+    bubble_bw = 255*bubble_bw.astype('uint8')
+    # fills enclosed holes with white, but leaves open holes black
+    bubble_part_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_bw)    
+    # removes any white pixels slightly inside the border of the image
+    mask_full = np.ones([bubble_part_filled.shape[0]-2*width_frame, 
+                        bubble_part_filled.shape[1]-2*width_frame])
+    mask_deframe = np.zeros_like(bubble_part_filled)
+    mask_deframe[width_frame:-width_frame,width_frame:-width_frame] = mask_full
+    mask_frame_sides = np.logical_not(mask_deframe)
+    # make the tops and bottoms black so only the sides are kept
+    mask_frame_sides[0:width_frame,:] = 0
+    mask_frame_sides[-width_frame:-1,:] = 0
+    # frames sides of filled bubble image
+    bubble_framed = np.logical_or(bubble_part_filled, mask_frame_sides)
+    # fills in open space in the middle of the bubble that might not get
+    # filled if bubble is on the edge of the frame (because then that
+    # open space is not completely bounded)
+    bubble_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_framed)
+    bubble = mask_im(bubble_filled, np.logical_not(mask_frame_sides))
+    bubble = 255*bubble.astype('uint8')
+    
+    return bubble
+
+
+def linked_four_frames(four_frames, pix_per_um, fig_size_red, show_fig=True):
+    """
+    Shows four frames with linked panning and zooming.
+    """
+    # list of figures
+    p = []
+    # creates images
+    for frame in four_frames:
+        p_new, _ = format_frame(frame, pix_per_um, fig_size_red)
+        p += [p_new]
+    # sets ranges
+    for i in range(1, len(p)):
+        p[i].x_range = p[0].x_range # links horizontal panning
+        p[i].y_range = p[0].y_range # links vertical panning
+    # creates gridplot
+    p_grid = gridplot([[p[0], p[1]], [p[2], p[3]]])
+    # shows figure
+    if show_fig:
+        show(p_grid)
+    
+    return p_grid
+
+
+def linked_frames(frame_list, pix_per_um, fig_size_red, shape=(2,2), show_fig=True, brightness=1.0, title_list=[]):
+    """
+    Shows four frames with linked panning and zooming.
+    """
+    # list of figures
+    p = []
+    # creates images
+    for frame in frame_list:
+        p_new, _ = format_frame(frame, pix_per_um, fig_size_red, brightness=brightness)
+        p += [p_new]
+    # adds titles to plots if provided (with help from
+    # https://stackoverflow.com/questions/47733953/set-title-of-a-python-bokeh-plot-figure-from-outside-of-the-figure-functio)
+    for i in range(len(title_list)):
+        t = Title()
+        t.text = title_list[i]
+        p[i].title = t
+    # sets ranges
+    for i in range(1, len(p)):
+        p[i].x_range = p[0].x_range # links horizontal panning
+        p[i].y_range = p[0].y_range # links vertical panning
+    # formats list for gridplot
+    n = 0
+    p_table = []
+    for r in range(shape[0]):
+        p_row = []
+        for c in range(shape[1]):
+            if n >= len(p):
+                break
+            p_row += [p[n]]
+            n += 1
+        p_table += [p_row]
+        if n >= len(p):
+            break
+            
+    # creates gridplot
+    p_grid = gridplot(p_table)
+    # shows figure
+    if show_fig:
+        show(p_grid)
+    
+    return p_grid
+
+
+def mask_im(im, mask):
+    """
+    Returns image with all pixels outside mask blacked out
+    mask is boolean array or array of 0s and 1s of same shape as image
+    """
+    # Applies mask depending on dimensions of image
+    tmp = np.shape(im)
+    im_masked = np.zeros_like(im)
+    if len(tmp) == 3:
+        for i in range(3):
+            im_masked[:,:,i] = mask*im[:,:,i]
+    else:
+        im_masked = im*mask
+
+    return im_masked
+
+
+def measure_stream_width(im, params):
+    """
+    Computes the width of a stream of a darker color inside the image.
+    
+    Parameters:
+        
+    Returns:
+        
+    """
+    # Extract parameters: microns per pixel conversion and brightfield image
+    um_per_pix = params[0]
+    bf = params[1]
+    # Scale by brightfield image if provided
+    if bf is not None:
+        scale_by_brightfield(im, bf)
+    # create 0-255 uint8 copy of image
+    im = one_2_uint8(im)
+    # K-means clustering into bkgd and stream (reshape im as array of RGB vals)
+    # TODO: possible extension - group using (row,col) as well
+    k_means = sklearn.cluster.KMeans(n_clusters=2).fit(im.reshape(-1,3)) 
+    im_clustered = k_means.labels_.reshape(im.shape[0], im.shape[1])
+    # make sure that the stream is labeled as 1 and background as 0 by using
+    # the most common label for the top line as the background label
+    im_clustered != (np.mean(im_clustered[0,:])>0.5)
+    # Extract the longest labeled region
+    im_labeled = skimage.measure.label(im_clustered)
+    width_max = 0
+    label = -1
+    for region in skimage.measure.regionprops(im_labeled):
+        row_min, col_min, row_max, col_max = region.bbox
+        width = col_max - col_min
+        if width > width_max:
+            label = region.label
+            width_max = width
+    assert label >= 0, "'label'=-1', no labeled regions found in k-means clustering."
+    im_stream = (im_labeled==label)
+    # compute stream width and standard deviation 
+    width, width_std = measure_labeled_im_width(im_stream, um_per_pix)
+    
+    return width, width_std
+    
+    
+def measure_labeled_im_width(im_labeled, um_per_pix):
+    """
+    """
+    # Count labeled pixels in each column (roughly stream width)
+    num_labeled_pixels = np.sum(im_labeled, axis=0)
+    # Use coordinates of corners of labeled region to correct for oblique angle
+    # (assume flat sides) and convert from pixels to um
+    angle_correction = get_angle_correction(im_labeled)
+    stream_width_arr = num_labeled_pixels*um_per_pix*angle_correction
+    # remove columns without any stream (e.g., in case of masking)
+    stream_width_arr = stream_width_arr[stream_width_arr > 0]
+    # get mean and standard deviation
+    mean = np.mean(stream_width_arr)
+    std = np.std(stream_width_arr)
+    
+    return mean, std
+
+    
+def one_2_uint8(im, copy=True):
+    """
+    Returns a copy of an image scaled from 0 to 1 as an image of uint8's scaled
+    from 0-255.
+    
+    Parameters:
+        im : 2D or 3D array of floats
+            Image with pixel intensities measured from 0 to 1 as floats
+        copy : bool, optional
+            If True, image will be copied first
+    
+    Returns:
+        im_uint8 : 2D or 3D array of uint8's
+            Image with pixel intensities measured from 0 to 255 as uint8's
+    """
+    if copy:
+        im = np.copy(im)
+    return (255*im).astype('uint8')
+
+
+def proc_im_seq(im_path_list, proc_fn, params, columns=None):
+    """
+    Processes a sequence of images with the given function and returns the
+    results. Images are provided as filepaths to images, which are loaded (and
+    possibly copied before analysis to preserve the image).
+    
+    Parameters:
+        im_path_list : array-like
+            Sequence of filepaths to the images to be processed
+        proc_fn : function handle
+            Handle of function to use to process image sequence
+        params : list
+            List of parameters to plug into the processing function
+        columns : array-like, optional
+            Results from image processing are saved to this dataframe
+    
+    Returns:
+        output : list (optionally, Pandas DataFrame if columns given)
+            Results from image processing        
+    """
+    # Initialize list to store results from image processing
+    output = []
+    # Process each image in sequence.
+    for im_path in im_path_list:
+        print("Begin processing {im_path}.".format(im_path=im_path))
+        im = plt.imread(im_path)
+        output += [proc_fn(im, params)]
+    # If columns provided, convert list into a dataframe
+    if columns:
+        output = pd.DataFrame(output, columns=columns)      
+        
+    return output
+
+
+def rotate_image(im,angle,center=[],crop=False,size=None):
+    """
+    Rotate the image about the center of the image or the user specified
+    center. Rotate by the angle in degrees and scale as specified. The new
+    image will be square with a side equal to twice the length from the center
+    to the farthest.
+    """
+    temp = im.shape
+    height = temp[0]
+    width = temp[1]
+    # Provide guess for center if none given (use midpoint of image window)
+    if len(center) == 0:
+        center = (width/2.0,height/2.0)
+    if not size:
+        tempx = max([height-center[1],center[1]])
+        tempy = max([width-center[0],center[0]])
+        # Calculate dimensions of resulting image to contain entire rotated image
+        L = int(2.0*np.sqrt(tempx**2.0 + tempy**2.0))
+        midX = L/2.0
+        midY = L/2.0
+        size = (L,L)
+    else:
+        midX = size[1]/2.0
+        midY = size[0]/2.0
+
+    # Calculation translation matrix so image is centered in output image
+    dx = midX - center[0]
+    dy = midY - center[1]
+    M_translate = np.float32([[1,0,dx],[0,1,dy]])
+    # Calculate rotation matrix
+    M_rotate = cv2.getRotationMatrix2D((midX,midY),angle,1)
+    # Translate and rotate image
+    im = cv2.warpAffine(im,M_translate,(size[1],size[0]))
+    im = cv2.warpAffine(im,M_rotate,(size[1],size[0]),flags=cv2.INTER_LINEAR)
+    # Crop image
+    if crop:
+        (x,y) = np.where(im>0)
+        im = im[min(x):max(x),min(y):max(y)]
+
+    return im
+
+
+def scale_by_brightfield(im, bf):
+    """
+    scale pixels by value in brightfield
+    
+    Parameters:
+        im : array of floats or ints
+            Image to scale
+        bf : array of floats or ints
+            Brightfield image for scaling given image
+    
+    Returns:
+        im_scaled : array of uint8
+            Image scaled by brightfield image
+    """
+    # convert to intensity map scaled to 1.0
+    bf_1 = bf.astype(float) / 255.0
+    # scale by bright field
+    im_scaled = np.divide(im,bf_1)
+    # rescale result to have a max pixel value of 255
+    im_scaled *= 255.0/np.max(im_scaled)
+    # change type to uint8
+    im_scaled = im_scaled.astype('uint8')
+
+    return im_scaled
+
+
+def scale_image(im,scale):
+    """
+    Scale the image by multiplicative scale factor "scale".
+    """
+    temp = im.shape
+    im = cv2.resize(im,(int(scale*temp[1]),int(scale*temp[0])))
+
+    return im
+
+
+def thresh_im(im, thresh=-1, c=5):
+    """
+        Applies a threshold to the image and returns black-and-white result.
+    c : int 
+        channel to threshold
+    Modified from ImageProcessingFunctions.py
+    """
+    n_dims = len(im.shape)
+    if n_dims == 3:
+        if c > n_dims:
+            c_brightest = -1
+            pix_val_brightest = -1
+            for i in range(n_dims):
+                curr_brightest = np.max(im[:,:,i])
+                if curr_brightest > pix_val_brightest:
+                    c_brightest = i
+                    pix_val_brightest = curr_brightest
+        else:
+            c_brightest = c
+        im = np.copy(im[:,:,c_brightest])
+    if thresh == -1:
+        # Otsu's thresholding
+        ret, thresh_im = cv2.threshold(im, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    else:
+        ret, thresh_im = cv2.threshold(im, thresh, 255, cv2.THRESH_BINARY)
+
+    return thresh_im
+
+
+def track_bubble(vid_filepath, n_ref, thresh, flow_dir, pix_per_um,
+                 width_frame=10, selem=None, ret_IDs=False,
+                 min_size=None, start_frame=0, end_frame=-1, skip=1):
+    """
+    """
+    # gets value channel of reference frame from video
+    ref_frame, _ = vid.load_frame(vid_filepath, n_ref, bokeh=False)
+    ref_val = get_val_channel(ref_frame, selem=selem) 
+    # gets number of frames from video
+    fps = vid.count_frames(vid_filepath)
+    # initializes ordered dictionary of bubble data from past frames and archive of all data
+    bubbles_prev = OrderedDict()
+    bubbles_archive = OrderedDict()
+    # initializes counter of current bubble label (0-indexed)
+    ID_curr = 0    
+    # chooses end frame to be last frame if given as -1
+    if end_frame == -1:
+        end_frame = vid.count_frames(vid_filepath)
+        
+    # loops through frames of video
+    for f in range(start_frame, end_frame, skip):
+        frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
+        val = get_val_channel(frame, selem=selem)
+        # highlights bubbles in the given frame
+        bubbles_bw = highlight_bubble(val, ref_val, thresh, width_frame, selem, min_size)
+        # finds bubbles and assigns IDs to track them, saving to archive
+        frame_labeled = skimage.measure.label(bubbles_bw)
+        ID_curr = assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive,
+                                 ID_curr, flow_dir, fps, pix_per_um)
+
+    # only returns IDs for each frame if requested
+    if ret_IDs:
+        frame_IDs = get_frame_IDs(bubbles_archive, start_frame, end_frame, skip)
+        return bubbles_archive, frame_IDs
+    else:
+        return bubbles_archive
+
+    
+def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_um, 
+                      width_frame=10, selem=None, min_size=None, start_frame=0, 
+                      end_frame=-1, skip=1, num_colors=10, time_sleep=2, 
+                      brightness=3.0, fig_size_red=0.5):
+    """
+    """
+#    # creates colormap
+#    cmap = cm.get_cmap('Spectral')
+
+    # gets value channel of reference frame from video
+    ref_frame, _ = vid.load_frame(vid_filepath, n_ref, bokeh=False)
+    ref_val = get_val_channel(ref_frame, selem=selem) 
+    # chooses end frame to be last frame if given as -1
+    if end_frame == -1:
+        end_frame = vid.count_frames(vid_filepath)
+        
+    # creates figure for displaying frames with labeled bubbles
+    p, im = format_frame(bokehfy(ref_val), pix_per_um, fig_size_red, brightness=brightness)
+    show(p, notebook_handle=True)
+    # loops through frames
+    for f in range(start_frame, end_frame, skip):   
+        # gets value channel of frame for processing
+        frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
+        val = get_val_channel(frame, selem=selem) 
+        # processes frame
+        bubble = highlight_bubble(val, ref_val, thresh, width_frame, selem, min_size)
+        # labels bubbles
+        frame_labeled, num_labels = skimage.measure.label(bubble, return_num=True)
+#        # ensures that the same number of IDs are provided as objects found
+#        assert len(frame_IDs[f]) == num_labels, \
+#            'improc.test_track_bubble() has label mismatch for frame {0:d}.'.format(f) \
+#            + 'num_labels = {0:d} and number of frame_IDs = {1:d}'.format(num_labels, len(frame_IDs[f]))
+        # gets IDs of bubbles in the present frame
+        IDs = frame_IDs[f]
+#        new_frame = np.zeros([bubble.shape[0], bubble.shape[1]])
+#        for ID in IDs:
+#            # assigns color on looping basis
+#            r,g,b,a = cmap((ID%num_colors)/num_colors)
+#            color = (255*np.array([r,g,b])).astype('uint8')
+#            print(color)
+#            # finds label associated with the bubble with this id
+#            rc, cc = centroids[ID]
+#            label = frame_labeled[int(rc), int(cc)]
+#            new_frame[frame_labeled==label] = ID%num_colors
+       
+        frame_colored = skimage.color.label2rgb(frame_labeled, image=frame, 
+                                                bg_label=0)
+ 
+        # converts frame from one-scaled to 255-scaled
+        frame_disp = fn.one_2_uint8(frame_colored)
+        for ID in IDs:
+            centroid = bubbles[ID].get_prop('centroid', f)
+            x = int(centroid[1])
+            y = int(centroid[0])
+            white = (255, 255, 255)
+            frame_disp = cv2.putText(img=frame_disp, text=str(ID), org=(x, y), 
+                                    fontFace=0, fontScale=2, color=white, 
+                                    thickness=3)
+        frame_disp = adjust_brightness(bokehfy(frame_disp), brightness)
+        im.data_source.data['image']=[frame_disp]
+        push_notebook()
+        time.sleep(time_sleep)
+        
+    return p
