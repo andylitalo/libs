@@ -11,10 +11,7 @@ from collections import OrderedDict
 import time
 
 # imports bokeh modules
-from bokeh.plotting import figure
 from bokeh.io import show, push_notebook
-from bokeh.models.annotations import Title
-from bokeh.layouts import gridplot
 
 # imports image-processing-specific libraries 
 import skimage.morphology
@@ -23,12 +20,14 @@ import skimage.measure
 import skimage.color
 import skimage.segmentation
 import skimage.feature
+import skimage.filters
 import cv2
 import scipy.ndimage
 
 # imports custom libraries
 import vid
 import fn
+import plotimproc as plot
 
 # imports custom classes (with reload clauses)
 from importlib import reload
@@ -259,45 +258,6 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
     return ID_curr
 
 
-def bokehfy(im, vert_flip=0):
-    """
-    Formats image for display with Bokeh. Can accommodate boolean, 0-1 scaled
-    floats, and 0-255 scaled uint8 images.
-    
-    Parameters
-    ----------
-    im : numpy array
-        Image to be formatted for Bokeh
-    vert_flip : int
-        Flag indcating if the image should be flipped. 0 flips vertically 
-        with cv2.flip().
-        
-    Returns
-    -------
-    im : numpy array
-        Original image formatted for display with Bokeh.
-    """
-    # converts boolean images to uint8
-    if im.dtype == 'bool':
-        im = 255*im.astype('uint8')
-    # converts 0-1 scale float to 0-255 scale uint8
-    elif im.dtype == 'float':
-        # multiplies by 255 if scaled by 1
-        if np.max(im) <= 1.0:
-            im *= 255
-        # converts to uint8
-        im = im.astype('uint8')
-    # converts BGR images to RGBA (from CV2, which uses BGR instead of RGB)
-    if len(im.shape) == 3:
-        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGBA) # because Bokeh expects a RGBA image
-    # converts gray scale (2d) images to RGBA
-    elif len(im.shape) == 2:
-        im = cv2.cvtColor(im, cv2.COLOR_GRAY2RGBA)
-    im = cv2.flip(im, vert_flip) # because Bokeh flips vertically
-    
-    return im
-               
-
 def bubble_distance(bubble1, bubble2, axis, upstream_penalty=1E10):
     """
     Computes the distance between each pair of points in the two sets
@@ -331,22 +291,6 @@ def bubble_d_mat(bubbles1, bubbles2, axis):
             d_mat[i,j] = bubble_distance(bubble1, bubble2, axis)
             
     return d_mat
-
-    
-def format_frame(frame, pix_per_um, fig_size_red, brightness=1.0, title=None):
-    frame = adjust_brightness(frame, brightness)
-    width = frame.shape[1]
-    height= frame.shape[0]
-    width_um = int(width / pix_per_um)
-    height_um = int(height / pix_per_um)
-    width_fig = int(width*fig_size_red)
-    height_fig = int(height*fig_size_red)
-    p = figure(x_range=(0,width_um), y_range=(0,height_um), output_backend="webgl", width=width_fig, height=height_fig, title=title)
-    p.xaxis.axis_label = 'width [um]'
-    p.yaxis.axis_label = 'height [um]'
-    im = p.image_rgba(image=[frame], x=0, y=0, dw=width_um, dh=height_um)
-    
-    return p, im
    
 
 def get_angle_correction(im_labeled):
@@ -426,12 +370,70 @@ def highlight_bubble(frame, ref_frame, thresh, width_border, selem, min_size,
     turns background black. Ignores edges of the frame.
     Only accepts 2D frames.
     """
-    assert (len(frame.shape) == 2) and (len(ref_frame.shape) == 2), 'improc.highlight_bubble() only accepts 2D frames.'
+    assert (len(frame.shape) == 2) and (len(ref_frame.shape) == 2), \
+        'improc.highlight_bubble() only accepts 2D frames.'
     
     # subtracts reference image from current image (value channel)
     im_diff = cv2.absdiff(ref_frame, frame)
     # thresholds image to become black-and-white
     thresh_bw = thresh_im(im_diff, thresh)
+    # smooths out thresholded image
+    closed_bw = skimage.morphology.binary_closing(thresh_bw, selem=selem)
+    # removes small objects
+    bubble_bw = skimage.morphology.remove_small_objects(closed_bw.astype(bool),
+                                                        min_size=min_size)
+    # converts image to uint8 type from bool
+    bubble_bw = 255*bubble_bw.astype('uint8')
+    # fills enclosed holes with white, but leaves open holes black
+    bubble_part_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_bw)    
+    # removes any white pixels slightly inside the border of the image
+    mask_full = np.ones([bubble_part_filled.shape[0]-2*width_border, 
+                        bubble_part_filled.shape[1]-2*width_border])
+    mask_deframe = np.zeros_like(bubble_part_filled)
+    mask_deframe[width_border:-width_border,width_border:-width_border] = mask_full
+    mask_frame_sides = np.logical_not(mask_deframe)
+    # make the tops and bottoms black so only the sides are kept
+    mask_frame_sides[0:width_border,:] = 0
+    mask_frame_sides[-width_border:-1,:] = 0
+    # frames sides of filled bubble image
+    bubble_framed = np.logical_or(bubble_part_filled, mask_frame_sides)
+    # fills in open space in the middle of the bubble that might not get
+    # filled if bubble is on the edge of the frame (because then that
+    # open space is not completely bounded)
+    bubble_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_framed)
+    bubble = mask_im(bubble_filled, np.logical_not(mask_frame_sides))
+    bubble = 255*bubble.astype('uint8')
+    
+    # returns intermediate steps if requeseted.
+    if ret_all_steps:
+        return im_diff, thresh_bw, closed_bw, bubble_bw, \
+                bubble_part_filled, bubble
+    else:
+        return bubble
+    
+    
+def highlight_bubble_test(frame, ref_frame, th_lo, th_hi, width_border, selem,
+                          min_size, ret_all_steps=False):
+    """
+    Version of highlight_bubble() for testing new features. This was 
+    created so code that uses the original version can still run the same.
+    
+    Highlights bubbles (regions of different brightness) with white and
+    turns background black. Ignores edges of the frame.
+    Only accepts 2D frames.
+    """
+    assert (len(frame.shape) == 2) and (len(ref_frame.shape) == 2), \
+        'improc.highlight_bubble() only accepts 2D frames.'
+    assert th_lo < th_hi, \
+        'In improc.highlight_bubbles_test(), low threshold must be lower.'
+    
+    # subtracts reference image from current image (value channel)
+    im_diff = cv2.absdiff(ref_frame, frame)
+    # thresholds image to become black-and-white
+    thresh_bw = skimage.filters.apply_hysteresis_threshold(\
+                        im_diff, th_lo, th_hi)
+
+
     # smooths out thresholded image
     closed_bw = skimage.morphology.binary_closing(thresh_bw, selem=selem)
     # removes small objects
@@ -482,72 +484,6 @@ def is_on_border(bbox, im, width_border):
         return True
     else:
         return False
-    
-    
-def linked_four_frames(four_frames, pix_per_um, fig_size_red, show_fig=True):
-    """
-    Shows four frames with linked panning and zooming.
-    """
-    # list of figures
-    p = []
-    # creates images
-    for frame in four_frames:
-        p_new, _ = format_frame(frame, pix_per_um, fig_size_red)
-        p += [p_new]
-    # sets ranges
-    for i in range(1, len(p)):
-        p[i].x_range = p[0].x_range # links horizontal panning
-        p[i].y_range = p[0].y_range # links vertical panning
-    # creates gridplot
-    p_grid = gridplot([[p[0], p[1]], [p[2], p[3]]])
-    # shows figure
-    if show_fig:
-        show(p_grid)
-    
-    return p_grid
-
-
-def linked_frames(frame_list, pix_per_um, fig_size_red, shape=(2,2), show_fig=True, brightness=1.0, title_list=[]):
-    """
-    Shows four frames with linked panning and zooming.
-    """
-    # list of figures
-    p = []
-    # creates images
-    for frame in frame_list:
-        p_new, _ = format_frame(frame, pix_per_um, fig_size_red, brightness=brightness)
-        p += [p_new]
-    # adds titles to plots if provided (with help from
-    # https://stackoverflow.com/questions/47733953/set-title-of-a-python-bokeh-plot-figure-from-outside-of-the-figure-functio)
-    for i in range(len(title_list)):
-        t = Title()
-        t.text = title_list[i]
-        p[i].title = t
-    # sets ranges
-    for i in range(1, len(p)):
-        p[i].x_range = p[0].x_range # links horizontal panning
-        p[i].y_range = p[0].y_range # links vertical panning
-    # formats list for gridplot
-    n = 0
-    p_table = []
-    for r in range(shape[0]):
-        p_row = []
-        for c in range(shape[1]):
-            if n >= len(p):
-                break
-            p_row += [p[n]]
-            n += 1
-        p_table += [p_row]
-        if n >= len(p):
-            break
-            
-    # creates gridplot
-    p_grid = gridplot(p_table)
-    # shows figure
-    if show_fig:
-        show(p_grid)
-    
-    return p_grid
 
 
 def mask_im(im, mask):
@@ -843,7 +779,7 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_u
         end_frame = vid.count_frames(vid_filepath)
         
     # creates figure for displaying frames with labeled bubbles
-    p, im = format_frame(bokehfy(ref_val), pix_per_um, fig_size_red, brightness=brightness)
+    p, im = plot.format_frame(plot.bokehfy(ref_val), pix_per_um, fig_size_red, brightness=brightness)
     show(p, notebook_handle=True)
     # loops through frames
     for f in range(start_frame, end_frame, skip):   
@@ -884,7 +820,7 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_u
             frame_disp = cv2.putText(img=frame_disp, text=str(ID), org=(x, y), 
                                     fontFace=0, fontScale=2, color=color, 
                                     thickness=3)
-        frame_disp = adjust_brightness(bokehfy(frame_disp), brightness)
+        frame_disp = adjust_brightness(plot.bokehfy(frame_disp), brightness)
         im.data_source.data['image']=[frame_disp]
         push_notebook()
         time.sleep(time_sleep)

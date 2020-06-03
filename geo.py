@@ -131,3 +131,8 @@ def generate_rectangle(xVert, yVert):
         X += [xMin]
         Y += [y]
     return np.array(X), np.array(Y)
+
+
+def v_sphere(R):
+    """Computes the volume of a sphere given the radius R."""
+    return (4*np.pi/3) * (R**3)
