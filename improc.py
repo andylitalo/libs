@@ -11,7 +11,7 @@ from collections import OrderedDict
 import time
 
 # imports bokeh modules
-from bokeh.io import show, push_notebook
+from bokeh.io import show, push_notebook, export_png
 
 # imports image-processing-specific libraries 
 import skimage.morphology
@@ -765,7 +765,8 @@ def track_bubble(vid_filepath, n_ref, thresh, flow_dir, pix_per_um,
 def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_um, 
                       width_border=10, selem=None, min_size=None, start_frame=0, 
                       end_frame=-1, skip=1, num_colors=10, time_sleep=2, 
-                      brightness=3.0, fig_size_red=0.5):
+                      brightness=3.0, fig_size_red=0.5, save_png_folder=None,
+                      show_fig=True):
     """
     """
 #    # creates colormap
@@ -780,9 +781,12 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_u
         
     # creates figure for displaying frames with labeled bubbles
     p, im = plot.format_frame(plot.bokehfy(ref_val), pix_per_um, fig_size_red, brightness=brightness)
-    show(p, notebook_handle=True)
+    if show_fig:
+        show(p, notebook_handle=True)
     # loops through frames
-    for f in range(start_frame, end_frame, skip):   
+    for f in range(start_frame, end_frame, skip):  
+        
+        print('Analyzing frame # {0:d}.'.format(f))
         # gets value channel of frame for processing
         frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
         val = get_val_channel(frame, selem=selem) 
@@ -824,5 +828,9 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_u
         im.data_source.data['image']=[frame_disp]
         push_notebook()
         time.sleep(time_sleep)
+        
+        # saves images
+        if save_png_folder is not None:
+            export_png(p, filename=save_png_folder + 'frame_{0:d}.png'.format(f))
         
     return p

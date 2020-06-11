@@ -31,7 +31,7 @@ def click_flow_dir(im):
     im_p = 255.0 / np.max(im_p) * im_p
     im_p = im_p.astype('uint8')
     # collects two points from clicks defining the flow direction from the inner wall
-    xy_vals = define_outer_edge(im_p, 'polygon', 'right-click 2 pts left-to-right along inner wall, then center-click')
+    xy_vals = define_outer_edge(im_p, 'polygon', 'right-click 2 pts left-to-right along inner wall, then left-click')
     # computes coordinates of vector from clicks
     dx = xy_vals[1][0]-xy_vals[0][0]
     dy = xy_vals[1][1]-xy_vals[0][1]
@@ -280,7 +280,7 @@ def get_pts(num_pts=1,im=None):
         plt.imshow(im)
         plt.axis('image')
 
-    pts = plt.ginput(n=num_pts,mouse_add=3, mouse_pop=1, mouse_stop=2,
+    pts = plt.ginput(n=num_pts,mouse_add=3, mouse_pop=2, mouse_stop=1,
                     timeout=0)
     return pts
 

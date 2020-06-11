@@ -10,13 +10,13 @@ import numpy as np
 import cv2
 import scipy.ndimage
 from bokeh.io import show, push_notebook
-from bokeh.models.annotations import Title, LabelSet
 import time
 
 # imports custom libraries
 import fn
 import improc
 import mask
+import plotimproc as plot
 
 def count_frames(path, override=False):
     """
@@ -127,7 +127,7 @@ def load_frame(vid_filepath, num, vert_flip=0, bokeh=True):
     cap.set(cv2.CAP_PROP_POS_FRAMES, num)
     ret, frame = cap.read()
     if bokeh:
-        frame = improc.bokehfy(frame)
+        frame = plot.bokehfy(frame)
     
     return frame, cap
 
@@ -141,7 +141,7 @@ def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=0,
     # width is the width of the figure box
     """
     frame, cap = load_frame(vid_filepath, start_frame)
-    p, im = improc.format_frame(frame, pix_per_um, fig_size_red, brightness=brightness)
+    p, im = plot.format_frame(frame, pix_per_um, fig_size_red, brightness=brightness)
     if show_fig:
         show(p, notebook_handle=True)
 
@@ -169,7 +169,7 @@ def view_video(vid_filepath, start_frame, pix_per_um, time_sleep=0.3,
                                     fontFace=0, fontScale=2, color=white, 
                                     thickness=3)
         # formats frame for viewing
-        frame = improc.adjust_brightness(improc.bokehfy(
+        frame = improc.adjust_brightness(plot.bokehfy(
                 frame, vert_flip=vert_flip), brightness)
         # displays frame
         im.data_source.data['image']=[frame]

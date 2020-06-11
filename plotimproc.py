@@ -69,7 +69,8 @@ def format_frame(frame, pix_per_um, fig_size_red, brightness=1.0, title=None):
     height_um = int(height / pix_per_um)
     width_fig = int(width*fig_size_red)
     height_fig = int(height*fig_size_red)
-    p = figure(x_range=(0,width_um), y_range=(0,height_um), output_backend="webgl", width=width_fig, height=height_fig, title=title)
+    p = figure(x_range=(0,width_um), y_range=(0,height_um), output_backend="webgl", 
+               width=width_fig, height=height_fig, title=title)
     p.xaxis.axis_label = 'width [um]'
     p.yaxis.axis_label = 'height [um]'
     im = p.image_rgba(image=[frame], x=0, y=0, dw=width_um, dh=height_um)
@@ -100,7 +101,8 @@ def linked_four_frames(four_frames, pix_per_um, fig_size_red, show_fig=True):
     return p_grid
 
 
-def linked_frames(frame_list, pix_per_um, fig_size_red, shape=(2,2), show_fig=True, brightness=1.0, title_list=[]):
+def linked_frames(frame_list, pix_per_um, fig_size_red, shape=(2,2), 
+                  show_fig=True, brightness=1.0, title_list=[]):
     """
     Shows four frames with linked panning and zooming.
     """
@@ -154,11 +156,11 @@ def six_frame_eda(vid_filepath, f, params, highlight_method, pix_per_um,
     im_diff, thresh_bw, closed_bw, bubble_bw, bubble_part_filled, bubble = all_steps
 
     # collects images to display
-    im_list = [improc.bokehfy(val), improc.bokehfy(im_diff), 
-               improc.bokehfy(thresh_bw), improc.bokehfy(closed_bw),
-              improc.bokehfy(bubble_bw), improc.bokehfy(bubble)]
+    im_list = [bokehfy(val), bokehfy(im_diff), 
+               bokehfy(thresh_bw), bokehfy(closed_bw),
+              bokehfy(bubble_bw), bokehfy(bubble)]
     title_list = ['Frame {0:d}: Value Channel (HSV)'.format(f), 
                   'Subtracted Reference (Value)', 'Thresholded', 
                   'Binary Closing', 'Small Obj Removed', 'Holes Filled']
-    _ = improc.linked_frames(im_list, pix_per_um, fig_size_red, shape=(2,3), 
+    _ = linked_frames(im_list, pix_per_um, fig_size_red, shape=(2,3), 
                              brightness=3.0, title_list=title_list)
