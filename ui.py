@@ -17,6 +17,7 @@ import plot
 import vid
 import geo
 import mask
+import improc
 
 
 
@@ -27,7 +28,10 @@ def click_flow_dir(im):
     "%matplotlib qt" to get a pop-out plot for using this function.
     """
     # formats image for use in matplotlib's imshow
-    im_p = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+    if improc.is_color(im):
+        im_p = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+    else:
+        im_p = np.copy(im)
     im_p = 255.0 / np.max(im_p) * im_p
     im_p = im_p.astype('uint8')
     # collects two points from clicks defining the flow direction from the inner wall

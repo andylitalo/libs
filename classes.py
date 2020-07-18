@@ -7,7 +7,6 @@ the Bubble class stores properties of a bubble from a video, both measured and
 processed post factum.
 """
 
-
 class Bubble:
     def __init__(self, ID, fps, frame_dim, flow_dir, pix_per_um, props_raw=[]):
         """
@@ -70,4 +69,66 @@ class Bubble:
                                   set(props.keys())))
         for key in keys_not_provided:
             self.props_raw[key] += [None]
+            
+            
+            
+########################## FILEVIDEOSTREAM CLASS ##############################
 
+from threading import Thread
+from queue import Queue
+import cv2
+
+
+class FileVideoStream:
+    """
+    Class for handling threaded loading of videos.
+    Source:
+        https://www.pyimagesearch.com/2017/02/06/faster-video-file-fps-with-cv2-videocapture-and-opencv/
+    """
+    def __init__(self, path, queueSize=128):
+        # initialize the file video stream along with the boolean
+        # used to indicate if the thread should be stopped or not
+        self.stream = cv2.VideoCapture(path)
+        self.stopped = False
+        # initialize the queue used to store frames read from
+        # the video file
+        self.Q = Queue(maxsize=queueSize)
+        
+    def start(self):
+        # start a thread to read frames from the file video stream
+        t = Thread(target=self.update, args=())
+        t.daemon = True
+        t.start()
+        
+        return self
+   
+    def update(self):
+        # keep looping infinitely
+        while True:
+            # if the thread indicator variable is set, stop the
+            # thread
+            if self.stopped:
+                return
+            # otherwise, ensure the queue has room in it
+            if not self.Q.full():
+                # read the next frame from the file
+                (grabbed, frame) = self.stream.read()
+   				# if the `grabbed` boolean is `False`, then we have
+   				# reached the end of the video file
+                if not grabbed:
+                    self.stop()
+                    return
+   				# add the frame to the queue
+                self.Q.put(frame)
+   
+    def read(self):
+        # return next frame in the queue
+        return self.Q.get()
+   
+    def more(self):
+   		# return True if there are still frames in the queue
+        return self.Q.qsize() > 0
+   
+    def stop(self):
+   		# indicate that the thread should be stopped
+        self.stopped = True

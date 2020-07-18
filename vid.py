@@ -122,14 +122,21 @@ def extract_frame(Vid,nFrame,hMatrix=None,maskData=None,filterFrame=False,
 
 def load_frame(vid_filepath, num, vert_flip=0, bokeh=True):
     """Loads frame from video using OpenCV and prepares for display in Bokeh."""
-    assert num < count_frames(vid_filepath), 'Frame number in vid.load_frame() must be less than total frames.'
+    # assert num < count_frames(vid_filepath), 'Frame number in vid.load_frame() must be less than total frames.'
     cap = cv2.VideoCapture(vid_filepath)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, num)
-    ret, frame = cap.read()
+    frame = read_frame(cap, num)
     if bokeh:
         frame = plot.bokehfy(frame)
     
     return frame, cap
+
+
+def read_frame(cap, num):
+    """Reads frame given the video capture object."""
+    cap.set(cv2.CAP_PROP_POS_FRAMES, num)
+    grabbed, frame = cap.read()
+    
+    return frame 
 
 
 def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=0, 

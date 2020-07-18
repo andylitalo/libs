@@ -104,7 +104,7 @@ def linked_four_frames(four_frames, pix_per_um, fig_size_red, show_fig=True):
 def linked_frames(frame_list, pix_per_um, fig_size_red, shape=(2,2), 
                   show_fig=True, brightness=1.0, title_list=[]):
     """
-    Shows four frames with linked panning and zooming.
+    Shows multiple frames with linked panning and zooming.
     """
     # list of figures
     p = []
@@ -146,7 +146,7 @@ def linked_frames(frame_list, pix_per_um, fig_size_red, shape=(2,2),
 
 
 def six_frame_eda(vid_filepath, f, params, highlight_method, pix_per_um,
-                  fig_size_red):
+                  fig_size_red, tag=''):
     """Shows six steps in the image-processing of a frame."""
     # loads current frame for image subtraction
     frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
@@ -161,6 +161,8 @@ def six_frame_eda(vid_filepath, f, params, highlight_method, pix_per_um,
               bokehfy(bubble_bw), bokehfy(bubble)]
     title_list = ['Frame {0:d}: Value Channel (HSV)'.format(f), 
                   'Subtracted Reference (Value)', 'Thresholded', 
-                  'Binary Closing', 'Small Obj Removed', 'Holes Filled']
-    _ = linked_frames(im_list, pix_per_um, fig_size_red, shape=(2,3), 
+                  'Binary Closing', 'Small Obj Removed', 'Holes Filled' + tag]
+    p_grid = linked_frames(im_list, pix_per_um, fig_size_red, shape=(2,3), 
                              brightness=3.0, title_list=title_list)
+    
+    return p_grid

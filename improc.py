@@ -30,12 +30,19 @@ import fn
 import plotimproc as plot
 
 # imports custom classes (with reload clauses)
-from importlib import reload
 import classes
-reload(classes)
 from classes import Bubble
+from classes import FileVideoStream
+
+# creates web driver for saving bokeh files as png
+from selenium.webdriver import Chrome, ChromeOptions
+options = ChromeOptions()
+options.add_argument('--headless')
+web_driver = Chrome(executable_path=r'C:\Users\andyl\anaconda3\chromedriver.exe', options=options)
 
 
+
+############################# METHOD DEFINITIONS ##############################
 def adjust_brightness(im, brightness, sat=255):
     """
     Adjusts brightness of image by scaling all pixels by the 
@@ -293,6 +300,48 @@ def bubble_d_mat(bubbles1, bubbles2, axis):
     return d_mat
    
 
+def compute_bkgd_med(vid_filepath, num_frames=100):
+    """
+    Computes the background of a given number of frames of a video by computing
+    the pixel-wise median of the specified number of frames. This method was
+    shown to provide a good background free of moving objects but preserving
+    stationary ones in extract_bkgd.ipynb.
+    
+    The frames are loaded using threading, a fast and low-memory method.
+
+    Parameters
+    ----------
+    vid_filepath : string
+        Filepath to video for processing.
+    num_frames : int, optional
+        Number of frames to process. The default is 100.
+
+    Returns
+    -------
+    bkgd_med : numpy array
+        Pixel-wise median of all frames. A useful background for background
+        subtraction.
+
+    """
+    # initializes file video stream for threaded loading of frames
+    fvs = FileVideoStream(vid_filepath).start()
+    # reads first frame as input for the algorithm
+    frame = fvs.read().astype(float)
+    
+    # computes the median
+    frame_trio = proc_frames_thread(fvs, med_alg, ([frame],), 
+                                    num_frames=num_frames)
+    
+    # the median value of pixels is the first object in the frame trio list
+    bkgd_med = frame_trio[0][0].astype('uint8')
+    
+    # takes value channel if color image provided
+    if len(bkgd_med.shape) == 3:
+        bkgd_med = get_val_channel(bkgd_med)
+        
+    return bkgd_med
+    
+    
 def get_angle_correction(im_labeled):
     """
     correction of length due to offset angle of stream
@@ -363,18 +412,18 @@ def get_val_channel(frame, selem=None):
     return val
 
     
-def highlight_bubble(frame, ref_frame, thresh, width_border, selem, min_size,
+def highlight_bubble(frame, bkgd, thresh, width_border, selem, min_size,
                      ret_all_steps=False):
     """
     Highlights bubbles (regions of different brightness) with white and
     turns background black. Ignores edges of the frame.
     Only accepts 2D frames.
     """
-    assert (len(frame.shape) == 2) and (len(ref_frame.shape) == 2), \
+    assert (len(frame.shape) == 2) and (len(bkgd.shape) == 2), \
         'improc.highlight_bubble() only accepts 2D frames.'
     
     # subtracts reference image from current image (value channel)
-    im_diff = cv2.absdiff(ref_frame, frame)
+    im_diff = cv2.absdiff(bkgd, frame)
     # thresholds image to become black-and-white
     thresh_bw = thresh_im(im_diff, thresh)
     # smooths out thresholded image
@@ -412,7 +461,7 @@ def highlight_bubble(frame, ref_frame, thresh, width_border, selem, min_size,
         return bubble
     
     
-def highlight_bubble_test(frame, ref_frame, th_lo, th_hi, width_border, selem,
+def highlight_bubble_hyst(frame, ref_frame, th_lo, th_hi, width_border, selem,
                           min_size, ret_all_steps=False):
     """
     Version of highlight_bubble() for testing new features. This was 
@@ -423,9 +472,9 @@ def highlight_bubble_test(frame, ref_frame, th_lo, th_hi, width_border, selem,
     Only accepts 2D frames.
     """
     assert (len(frame.shape) == 2) and (len(ref_frame.shape) == 2), \
-        'improc.highlight_bubble() only accepts 2D frames.'
+        'improc.highlight_bubble_hyst() only accepts 2D frames.'
     assert th_lo < th_hi, \
-        'In improc.highlight_bubbles_test(), low threshold must be lower.'
+        'In improc.highlight_bubbles_hyst(), low threshold must be lower.'
     
     # subtracts reference image from current image (value channel)
     im_diff = cv2.absdiff(ref_frame, frame)
@@ -467,6 +516,11 @@ def highlight_bubble_test(frame, ref_frame, th_lo, th_hi, width_border, selem,
                 bubble_part_filled, bubble
     else:
         return bubble
+
+
+def is_color(im):
+    """Returns True if the image is a color image (3 channels) and false if not."""
+    return len(im.shape) == 3
 
 
 def is_on_border(bbox, im, width_border):
@@ -562,25 +616,122 @@ def measure_labeled_im_width(im_labeled, um_per_pix):
     
     return mean, std
 
-    
+
+def med_alg(fvs, frame_trio):
+    """
+    Performs repeated step for algorithm to compute the pixel-wise median of
+    the frames of a video. It loads two frames along with the current median
+    into a "trio" and then computes the pixel-wise median of those three 
+    frames. This can be shown to give the overall pixel-wise median of a
+    series of frames without requiring all frames to be stored in memory 
+    simultaneously.
+
+    Parameters
+    ----------
+    fvs : FileVideoStream object
+        File video stream that manages threading used to load and queue frames.
+        See the FileVideoStream class in classes.py for definition and methods.
+        Construct and initiate: FileVideoStream(<str of vid filepath>).start()
+    frame_trio : list
+        List of numpy arrays of frames. The first element is always the median.
+        The list may have up to three elements, the second and third being
+        frames in the queue for computing the median.
+
+    Returns
+    -------
+    frame_trio : list
+        Same as input frame_trio, but either with the loaded frame appended or
+        the median taken and only the median frame remaining.
+
+    """
+    # reads frame from file video stream
+    frame = fvs.read().astype(float)
+    # adds frame to list if three frames not collected yet
+    if len(frame_trio) < 3:
+        frame_trio += [frame]
+    # if three frames collected, takes their median and sets that as the new frame in the last
+    else:
+        stacked_arr = np.stack(tuple(frame_trio), axis=0)
+        bkgd_med = np.median(stacked_arr, axis=0)
+        frame_trio = [bkgd_med]
+        
+    return (frame_trio,)
+
+
 def one_2_uint8(im, copy=True):
     """
     Returns a copy of an image scaled from 0 to 1 as an image of uint8's scaled
     from 0-255.
     
-    Parameters:
-        im : 2D or 3D array of floats
-            Image with pixel intensities measured from 0 to 1 as floats
-        copy : bool, optional
-            If True, image will be copied first
+    Parameters
+    ----------
+    im : 2D or 3D array of floats
+        Image with pixel intensities measured from 0 to 1 as floats
+    copy : bool, optional
+        If True, image will be copied first
     
-    Returns:
-        im_uint8 : 2D or 3D array of uint8's
-            Image with pixel intensities measured from 0 to 255 as uint8's
+    Returns
+    -------
+    im_uint8 : 2D or 3D array of uint8's
+        Image with pixel intensities measured from 0 to 255 as uint8's
     """
     if copy:
         im = np.copy(im)
     return (255*im).astype('uint8')
+
+
+def proc_frames_thread(fvs, alg, args, num_frames=100):
+    """
+    Processes frames using threading for efficiency. Applies given algorithm
+    upon loading each frame.
+    
+    NOTE: the FileVideoStream object fvs must be stopped before running this.
+    Otherwise it will not be able to start.
+
+    Parameters
+    ----------
+    fvs : FileVideoStream object
+        File video stream that manages threading used to load and queue frames.
+        See the FileVideoStream class in classes.py for definition and methods.
+        Construct and initiate: FileVideoStream(<str of vid filepath>).start()
+    alg : function
+        Algorithmic step to apply to each new frame. Also takes in args. This
+        function must return an array of floats. It will not load if it is int.
+    args : tuple
+        Additional arguments besides the FileVideoStream required by alg.
+    num_frames : int, optional
+        Number of frames to process. The default is 100.
+
+    Returns
+    -------
+    result : object
+        Output of repeated application of the algorithmic step alg to each 
+        frame in the video. Type is determined by output of alg.
+
+    """
+    print('started proc_frames_thread')
+    # initializes result by applying algorithm to first frame
+    result = alg(fvs, *args)
+    # initializes counter at 3 because the next computation will be the 3rd (args is first, result is second)
+    ctr = 3
+    # loops through frames performing algorithm to process them
+    while fvs.more():
+        
+        # computes algorithmic step
+        result = alg(fvs, *result)
+        
+        # reports counter and progress
+        print(ctr)
+        ctr += 1
+        if ctr > num_frames:
+            break
+        if (ctr % 10) == 0:
+            print('Completed {0:d} frames of {1:d}.'.format(ctr, num_frames))
+            
+    # stops file video stream
+    fvs.stop()
+
+    return result
 
 
 def proc_im_seq(im_path_list, proc_fn, params, columns=None):
@@ -724,14 +875,11 @@ def thresh_im(im, thresh=-1, c=5):
     return thresh_im
 
 
-def track_bubble(vid_filepath, n_ref, thresh, flow_dir, pix_per_um,
-                 width_border=10, selem=None, ret_IDs=False,
+def track_bubble(vid_filepath, bkgd, th_lo, th_hi, flow_dir, pix_per_um,
+                 width_border=10, selem=None, ret_IDs=False, report_freq=10,
                  min_size=None, start_frame=0, end_frame=-1, skip=1):
     """
     """
-    # gets value channel of reference frame from video
-    ref_frame, _ = vid.load_frame(vid_filepath, n_ref, bokeh=False)
-    ref_val = get_val_channel(ref_frame, selem=selem) 
     # gets number of frames from video
     fps = vid.count_frames(vid_filepath)
     # initializes ordered dictionary of bubble data from past frames and archive of all data
@@ -748,11 +896,16 @@ def track_bubble(vid_filepath, n_ref, thresh, flow_dir, pix_per_um,
         frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
         val = get_val_channel(frame, selem=selem)
         # highlights bubbles in the given frame
-        bubbles_bw = highlight_bubble(val, ref_val, thresh, width_border, selem, min_size)
+        bubbles_bw = highlight_bubble_hyst(val, bkgd, th_lo, th_hi, width_border, 
+                                      selem, min_size)
         # finds bubbles and assigns IDs to track them, saving to archive
         frame_labeled = skimage.measure.label(bubbles_bw)
         ID_curr = assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive,
                                  ID_curr, flow_dir, fps, pix_per_um, width_border)
+        
+        if (f % report_freq) == 0:
+            print('Processed frame {0:d} of range {1:d}:{2:d}:{3:d}.' \
+                  .format(f, start_frame, skip, end_frame))
 
     # only returns IDs for each frame if requested
     if ret_IDs:
@@ -762,7 +915,7 @@ def track_bubble(vid_filepath, n_ref, thresh, flow_dir, pix_per_um,
         return bubbles_archive
 
     
-def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_um, 
+def test_track_bubble(vid_filepath, bubbles, frame_IDs, bkgd, th_lo, th_hi, pix_per_um, 
                       width_border=10, selem=None, min_size=None, start_frame=0, 
                       end_frame=-1, skip=1, num_colors=10, time_sleep=2, 
                       brightness=3.0, fig_size_red=0.5, save_png_folder=None,
@@ -772,15 +925,12 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_u
 #    # creates colormap
 #    cmap = cm.get_cmap('Spectral')
 
-    # gets value channel of reference frame from video
-    ref_frame, _ = vid.load_frame(vid_filepath, n_ref, bokeh=False)
-    ref_val = get_val_channel(ref_frame, selem=selem) 
     # chooses end frame to be last frame if given as -1
     if end_frame == -1:
         end_frame = vid.count_frames(vid_filepath)
         
     # creates figure for displaying frames with labeled bubbles
-    p, im = plot.format_frame(plot.bokehfy(ref_val), pix_per_um, fig_size_red, brightness=brightness)
+    p, im = plot.format_frame(plot.bokehfy(bkgd), pix_per_um, fig_size_red, brightness=brightness)
     if show_fig:
         show(p, notebook_handle=True)
     # loops through frames
@@ -791,7 +941,8 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_u
         frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
         val = get_val_channel(frame, selem=selem) 
         # processes frame
-        bubble = highlight_bubble(val, ref_val, thresh, width_border, selem, min_size)
+        bubble = highlight_bubble_hyst(val, bkgd, th_lo, th_hi, width_border, 
+                                  selem, min_size)
         # labels bubbles
         frame_labeled, num_labels = skimage.measure.label(bubble, return_num=True)
         # ensures that the same number of IDs are provided as objects found
@@ -831,6 +982,7 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, n_ref, thresh, pix_per_u
         
         # saves images
         if save_png_folder is not None:
-            export_png(p, filename=save_png_folder + 'frame_{0:d}.png'.format(f))
+            export_png(p, filename=save_png_folder + 'frame_{0:d}.png'.format(f),
+                       webdriver=web_driver)
         
     return p
