@@ -112,12 +112,15 @@ def average_rgb(im):
 
 def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr, 
                    flow_dir, fps, pix_per_um, width_border, row_lo, row_hi, 
-                   v_max):
+                   v_max, area_thresh=0):
     """
     Assigns Bubble objects with unique IDs to the labeled objects on the video
     frame provided. This method is used on a single frame in the context of
     processing an entire video and uses information from the previous frame.
     Inspired by and partially copied from PyImageSearch [1].
+    
+    Only registers bubbles above the area threshold. Once registered, a bubble
+    no longer needs to remain above the area threshold.
     
     Updates bubbles_prev and bubbles_archive in place.
     
@@ -151,6 +154,8 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
         Row of upper inner wall
     v_max : float
         Maximum velocity expected due to Poiseuille flow [pix/s]
+    area_thresh : int
+        Bubbles must have a greater area than this threshold to be registered.
         
     Returns
     -------
@@ -161,7 +166,6 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
     ----------
     .. [1] https://www.pyimagesearch.com/2018/07/23/simple-object-tracking-with-opencv/
     """
-    
     # identifies the different objects in the frame
     region_props = skimage.measure.regionprops(frame_labeled)
     # creates dictionaries of properties for each object
@@ -182,8 +186,10 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
     # to new bubble IDs 
     if len(bubbles_prev) == 0:
         for i in range(len(bubbles_curr)):
-            bubbles_prev[ID_curr] = bubbles_curr[i]
-            ID_curr += 1
+            # only adds large bubbles
+            if bubbles_curr[i]['area'] >= area_thresh:
+                bubbles_prev[ID_curr] = bubbles_curr[i]
+                ID_curr += 1
    
     # if no bubbles in current frame, removes bubbles from dictionary of
     # bubbles in the previous frame
@@ -267,8 +273,10 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
 
         # registers each unregistered new input centroid as a bubble seen
         for col in cols_unused:
-            bubbles_prev[ID_curr] = bubbles_curr[col]
-            ID_curr += 1
+            # adds only bubbles above threshold
+            if bubbles_curr[col]['area'] >= area_thresh:
+                bubbles_prev[ID_curr] = bubbles_curr[col]
+                ID_curr += 1
      
     # archives bubbles from this frame in order of increasing ID
     for ID in bubbles_prev.keys():
@@ -1089,7 +1097,7 @@ def thresh_im(im, thresh=-1, c=5):
 
 def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args, 
                  pix_per_um, flow_dir, row_lo, row_hi, 
-                   v_max, prefix, ret_IDs=False, 
+                   v_max, prefix, area_thresh=0, ret_IDs=False, 
                  report_freq=10, width_border=10, start_frame=0,
                  end_frame=-1, skip=1):
     """
@@ -1123,7 +1131,7 @@ def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
         ID_curr = assign_bubbles(frame_labeled, f, bubbles_prev, 
                                  bubbles_archive, ID_curr, flow_dir, fps, 
                                  pix_per_um, width_border, row_lo, row_hi, 
-                                 v_max)
+                                 v_max, area_thresh=area_thresh)
         
         if (f % report_freq*skip) == 0:
             print('Processed frame {0:d} of range {1:d}:{2:d}:{3:d}.' \
@@ -1168,11 +1176,11 @@ def test_track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
         bubble = highlight_bubble_method(val, bkgd, *args)
         # labels bubbles
         frame_labeled, num_labels = skimage.measure.label(bubble, return_num=True)
-        # ensures that the same number of IDs are provided as objects found
-        assert len(frame_IDs[f]) == num_labels, \
-            'improc.test_track_bubble() has label mismatch for frame {0:d}.'.format(f) \
-            + 'num_labels = {0:d} and number of frame_IDs = {1:d}' \
-                .format(num_labels, len(frame_IDs[f]))
+        # # ensures that the same number of IDs are provided as objects found
+        # assert len(frame_IDs[f]) == num_labels, \
+        #     'improc.test_track_bubble() has label mismatch for frame {0:d}.'.format(f) \
+        #     + 'num_labels = {0:d} and number of frame_IDs = {1:d}' \
+        #         .format(num_labels, len(frame_IDs[f]))
         # assigns IDs to pixels of each bubble--sort of helps with color-coding
         IDs = frame_IDs[f]
         frame_relabeled = np.zeros(frame_labeled.shape)
