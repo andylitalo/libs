@@ -179,7 +179,7 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
     # if no bubbles in current frame, removes bubbles from dictionary of
     # bubbles in the previous frame
     elif len(bubbles_curr) == 0:
-        for ID in bubbles_prev.keys():
+        for ID in list(bubbles_prev.keys()):
             del bubbles_prev[ID]         
    
     # otherwise, assigns bubbles in current frames to previous objects based
@@ -265,10 +265,13 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
     return ID_curr
 
 
-def bubble_distance(bubble1, bubble2, axis, upstream_penalty=1E10):
+def bubble_distance(bubble1, bubble2, axis, min_travel=0, upstream_penalty=1E5, 
+                    min_off_axis=4, off_axis_steepness=0.3):
     """
     Computes the distance between each pair of points in the two sets
     perpendicular to the axis. All inputs must be numpy arrays.
+    Wiggle room gives forgiveness for a few pixels in case the bubble is
+    stagnant but processing causes the centroid to move a little.
     # TODO incorporate velocity profile into objective
     """
     c1 = np.array(bubble1['centroid'])
@@ -279,8 +282,10 @@ def bubble_distance(bubble1, bubble2, axis, upstream_penalty=1E10):
     # computes projection along flow axis
     proj =  comp*axis
     d_off_axis = np.linalg.norm(diff - proj)
-    # adds huge penalty if second bubble is upstream of first bubble
-    d = d_off_axis + upstream_penalty*(comp < 0)
+    # adds huge penalty if second bubble is upstream of first bubble and a 
+    # moderate penalty if it is off the axis
+    #np.exp(off_axis_steepness*(d_off_axis-min_off_axis)) + \
+    d = d_off_axis + upstream_penalty*(comp < min_travel)
     
     return d
 
@@ -325,7 +330,8 @@ def compute_bkgd_med(vid_filepath, num_frames=100):
     """
     # initializes file video stream for threaded loading of frames
     fvs = FileVideoStream(vid_filepath).start()
-    # reads first frame as input for the algorithm
+    # reads first frame as input for the algorithm; must convert to float
+    # to proceed through file video stream
     frame = fvs.read().astype(float)
     
     # computes the median
@@ -341,6 +347,81 @@ def compute_bkgd_med(vid_filepath, num_frames=100):
         
     return bkgd_med
     
+   
+def find_label(frame_labeled, rc, cc):
+    """
+    Returns the label for the bubble with the given centroid coordinates.
+    Typically, this is just the value of the labeled frame at the integer
+    values of the centroid coordinates, but for concave bubble shapes, the
+    integer values of the centroid coordinates might not designate a pixel
+    that is inside the bubble. This algortihm continues the search to find 
+    a pixel that is indeed inside the bubble and get its label.
+
+    Parameters
+    ----------
+    frame_labeled : (M x N) numpy array of uint8
+        Image of objects labeled by skimage.color.label2rgb
+    rc : float
+        Row of the centroid of the object whose label is desired.
+    cc : float
+        Column of centroid of the object label is desiredRIPTION.
+
+    Returns
+    -------
+    label : int
+        Label of the image with centroid at (rc, cc). -1 indicates failure.
+
+    """
+    # lists steps to take from centroid to find pixel in the labeled object
+    steps = [(0,0), (0,1), (1,0), (1,1)]
+    # searches around centroid for a labeled point
+    for step in steps:
+        label = frame_labeled[int(rc)+step[0], int(cc)+step[1]]
+        if label != 0:
+            return label
+        
+    # failed to find non-zero label--returns -1 to indicate failure
+    return -1
+    
+def frame_and_fill(im, w):
+    """
+    Frames image with border to fill in holes cut off at the edge. Without 
+    adding a frame, a hole in an object that is along the edge will not be 
+    viewed as a hole to be filled by scipy.ndimage.morphology.binary_fill_holes
+    since a "hole" must be completely enclosed by white object pixels.
+
+    Parameters
+    ----------
+    im : numpy array of uint8
+        Image whose holes are to be filled. 0s and 255s
+    w : int
+        Width of border used to frame image to fill in holes cut off at edge.
+
+    Returns
+    -------
+    im : numpy array of uint8
+        Image with holes filled, including those cut off at border. 0s and 255s
+
+    """
+        # removes any white pixels slightly inside the border of the image
+    mask_full = np.ones([im.shape[0]-2*w, im.shape[1]-2*w])
+    mask_deframe = np.zeros_like(im)
+    mask_deframe[w:-w,w:-w] = mask_full
+    mask_frame_sides = np.logical_not(mask_deframe)
+    # make the tops and bottoms black so only the sides are kept
+    mask_frame_sides[0:w,:] = 0
+    mask_frame_sides[-w:-1,:] = 0
+    # frames sides of filled bubble image
+    im_framed = np.logical_or(im, mask_frame_sides)
+    # fills in open space in the middle of the bubble that might not get
+    # filled if bubble is on the edge of the frame (because then that
+    # open space is not completely bounded)
+    im_filled = scipy.ndimage.morphology.binary_fill_holes(im_framed)
+    im = mask_im(im_filled, np.logical_not(mask_frame_sides))
+    im = 255*im.astype('uint8')
+    
+    return im
+
     
 def get_angle_correction(im_labeled):
     """
@@ -412,7 +493,109 @@ def get_val_channel(frame, selem=None):
     return val
 
     
-def highlight_bubble(frame, bkgd, thresh, width_border, selem, min_size,
+def highlight_bubble_hyst(frame, bkgd, th_lo, th_hi, width_border, selem,
+                          min_size, ret_all_steps=False):
+    """
+    Version of highlight_bubble() that uses a hysteresis filter.
+    """
+    assert (len(frame.shape) == 2) and (len(bkgd.shape) == 2), \
+        'improc.highlight_bubble_hyst() only accepts 2D frames.'
+    assert th_lo < th_hi, \
+        'In improc.highlight_bubbles_hyst(), low threshold must be lower.'
+    
+    # subtracts reference image from current image (value channel)
+    im_diff = cv2.absdiff(bkgd, frame)
+    # thresholds image to become black-and-white
+    thresh_bw = skimage.filters.apply_hysteresis_threshold(\
+                        im_diff, th_lo, th_hi)
+        
+    # smooths out thresholded image
+    closed_bw = skimage.morphology.binary_closing(thresh_bw, selem=selem)
+    # removes small objects
+    bubble_bw = skimage.morphology.remove_small_objects(closed_bw.astype(bool),
+                                                        min_size=min_size)
+    # converts image to uint8 type from bool
+    bubble_bw = 255*bubble_bw.astype('uint8')
+    # fills enclosed holes with white, but leaves open holes black
+    bubble_part_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_bw)    
+    # fills in holes that might be cut off at border
+    bubble = frame_and_fill(bubble_part_filled, width_border)
+    
+    # returns intermediate steps if requeseted.
+    if ret_all_steps:
+        return im_diff, thresh_bw, closed_bw, bubble_bw, \
+                bubble
+    else:
+        return bubble
+
+
+def highlight_bubble_hyst_thresh(frame, bkgd, th, th_lo, th_hi, min_size_lo,
+                                 min_size_hi, width_border, selem, mask_data,
+                                 ret_all_steps=False):
+    """
+    Version of highlight_bubble() that first performs a low threshold and 
+    high minimum size to get faint, large bubbles, and then performs a higher
+    hysteresis threshold with a low minimum size to get distinct, small
+    bubbles.
+    
+    Only accepts 2D frames.
+    """
+    assert (len(frame.shape) == 2) and (len(bkgd.shape) == 2), \
+        'improc.highlight_bubble_hyst_thresh() only accepts 2D frames.'
+    assert th_lo < th_hi, \
+        'In improc.highlight_bubbles_hyst_thresh(), low threshold must be lower.'
+    
+    # subtracts reference image from current image (value channel)
+    im_diff = cv2.absdiff(bkgd, frame)
+    
+    # scales subtracted image by the gradient to reduce effects of movement
+    # grad = skimage.filters.sobel(bkgd)
+    # im_diff = np.divide(im_diff, (grad+1))*np.mean(grad+1)
+    
+    ##################### THRESHOLD AND HIGH MIN SIZE #########################
+    # thresholds image to become black-and-white
+    thresh_bw_1 = thresh_im(im_diff, th)
+    # smooths out thresholded image
+    closed_bw_1 = skimage.morphology.binary_closing(thresh_bw_1, selem=selem)
+    # removes small objects
+    bubble_bw_1 = skimage.morphology.remove_small_objects(closed_bw_1.astype(bool),
+                                                        min_size=min_size_hi)
+    # converts image to uint8 type from bool
+    bubble_bw_1 = 255*bubble_bw_1.astype('uint8')
+    # fills enclosed holes with white, but leaves open holes black
+    bubble_1 = scipy.ndimage.morphology.binary_fill_holes(bubble_bw_1) 
+    
+    ################# HYSTERESIS THRESHOLD AND LOW MIN SIZE ###################
+    # thresholds image to become black-and-white
+    thresh_bw_2 = skimage.filters.apply_hysteresis_threshold(\
+                        im_diff, th_lo, th_hi)
+
+    # smooths out thresholded image
+    closed_bw_2 = skimage.morphology.binary_closing(thresh_bw_2, selem=selem)
+    # removes small objects
+    bubble_bw_2 = skimage.morphology.remove_small_objects(closed_bw_2.astype(bool),
+                                                        min_size=min_size_lo)
+    # converts image to uint8 type from bool
+    bubble_bw_2 = 255*bubble_bw_2.astype('uint8')
+    # fills enclosed holes with white, but leaves open holes black
+    bubble_part_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_bw_2)    
+    # fills in holes that might be cut off at border
+    bubble_2 = frame_and_fill(bubble_part_filled, width_border)
+    
+    # merges images to create final image and masks result
+    bubble = np.logical_or(bubble_1, bubble_2)
+    if mask_data is not None:
+        bubble = np.logical_and(bubble, mask_data['mask'])
+    
+    # returns intermediate steps if requeseted.
+    if ret_all_steps:
+        return thresh_bw_1, bubble_1, thresh_bw_2, \
+                bubble_2, bubble
+    else:
+        return bubble
+
+  
+def highlight_bubble_thresh(frame, bkgd, thresh, width_border, selem, min_size,
                      ret_all_steps=False):
     """
     Highlights bubbles (regions of different brightness) with white and
@@ -434,88 +617,16 @@ def highlight_bubble(frame, bkgd, thresh, width_border, selem, min_size,
     # converts image to uint8 type from bool
     bubble_bw = 255*bubble_bw.astype('uint8')
     # fills enclosed holes with white, but leaves open holes black
-    bubble_part_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_bw)    
-    # removes any white pixels slightly inside the border of the image
-    mask_full = np.ones([bubble_part_filled.shape[0]-2*width_border, 
-                        bubble_part_filled.shape[1]-2*width_border])
-    mask_deframe = np.zeros_like(bubble_part_filled)
-    mask_deframe[width_border:-width_border,width_border:-width_border] = mask_full
-    mask_frame_sides = np.logical_not(mask_deframe)
-    # make the tops and bottoms black so only the sides are kept
-    mask_frame_sides[0:width_border,:] = 0
-    mask_frame_sides[-width_border:-1,:] = 0
-    # frames sides of filled bubble image
-    bubble_framed = np.logical_or(bubble_part_filled, mask_frame_sides)
-    # fills in open space in the middle of the bubble that might not get
-    # filled if bubble is on the edge of the frame (because then that
-    # open space is not completely bounded)
-    bubble_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_framed)
-    bubble = mask_im(bubble_filled, np.logical_not(mask_frame_sides))
-    bubble = 255*bubble.astype('uint8')
+    bubble_part_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_bw) 
+    bubble = frame_and_fill(bubble_part_filled, width_border)
     
-    # returns intermediate steps if requeseted.
+    # returns intermediate steps if requested.
     if ret_all_steps:
-        return im_diff, thresh_bw, closed_bw, bubble_bw, \
-                bubble_part_filled, bubble
+        return im_diff, thresh_bw, closed_bw, bubble_bw, bubble
     else:
         return bubble
     
-    
-def highlight_bubble_hyst(frame, ref_frame, th_lo, th_hi, width_border, selem,
-                          min_size, ret_all_steps=False):
-    """
-    Version of highlight_bubble() for testing new features. This was 
-    created so code that uses the original version can still run the same.
-    
-    Highlights bubbles (regions of different brightness) with white and
-    turns background black. Ignores edges of the frame.
-    Only accepts 2D frames.
-    """
-    assert (len(frame.shape) == 2) and (len(ref_frame.shape) == 2), \
-        'improc.highlight_bubble_hyst() only accepts 2D frames.'
-    assert th_lo < th_hi, \
-        'In improc.highlight_bubbles_hyst(), low threshold must be lower.'
-    
-    # subtracts reference image from current image (value channel)
-    im_diff = cv2.absdiff(ref_frame, frame)
-    # thresholds image to become black-and-white
-    thresh_bw = skimage.filters.apply_hysteresis_threshold(\
-                        im_diff, th_lo, th_hi)
 
-
-    # smooths out thresholded image
-    closed_bw = skimage.morphology.binary_closing(thresh_bw, selem=selem)
-    # removes small objects
-    bubble_bw = skimage.morphology.remove_small_objects(closed_bw.astype(bool),
-                                                        min_size=min_size)
-    # converts image to uint8 type from bool
-    bubble_bw = 255*bubble_bw.astype('uint8')
-    # fills enclosed holes with white, but leaves open holes black
-    bubble_part_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_bw)    
-    # removes any white pixels slightly inside the border of the image
-    mask_full = np.ones([bubble_part_filled.shape[0]-2*width_border, 
-                        bubble_part_filled.shape[1]-2*width_border])
-    mask_deframe = np.zeros_like(bubble_part_filled)
-    mask_deframe[width_border:-width_border,width_border:-width_border] = mask_full
-    mask_frame_sides = np.logical_not(mask_deframe)
-    # make the tops and bottoms black so only the sides are kept
-    mask_frame_sides[0:width_border,:] = 0
-    mask_frame_sides[-width_border:-1,:] = 0
-    # frames sides of filled bubble image
-    bubble_framed = np.logical_or(bubble_part_filled, mask_frame_sides)
-    # fills in open space in the middle of the bubble that might not get
-    # filled if bubble is on the edge of the frame (because then that
-    # open space is not completely bounded)
-    bubble_filled = scipy.ndimage.morphology.binary_fill_holes(bubble_framed)
-    bubble = mask_im(bubble_filled, np.logical_not(mask_frame_sides))
-    bubble = 255*bubble.astype('uint8')
-    
-    # returns intermediate steps if requeseted.
-    if ret_all_steps:
-        return im_diff, thresh_bw, closed_bw, bubble_bw, \
-                bubble_part_filled, bubble
-    else:
-        return bubble
 
 
 def is_color(im):
@@ -875,13 +986,12 @@ def thresh_im(im, thresh=-1, c=5):
     return thresh_im
 
 
-def track_bubble(vid_filepath, bkgd, th_lo, th_hi, flow_dir, pix_per_um,
-                 width_border=10, selem=None, ret_IDs=False, report_freq=10,
-                 min_size=None, start_frame=0, end_frame=-1, skip=1):
+def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args, 
+                 pix_per_um, flow_dir, ret_IDs=False, report_freq=10, 
+                 width_border=10, fps=1070, start_frame=0, end_frame=-1, 
+                 skip=1):
     """
     """
-    # gets number of frames from video
-    fps = vid.count_frames(vid_filepath)
     # initializes ordered dictionary of bubble data from past frames and archive of all data
     bubbles_prev = OrderedDict()
     bubbles_archive = OrderedDict()
@@ -893,17 +1003,19 @@ def track_bubble(vid_filepath, bkgd, th_lo, th_hi, flow_dir, pix_per_um,
         
     # loops through frames of video
     for f in range(start_frame, end_frame, skip):
+        # loads frame from video file
         frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
-        val = get_val_channel(frame, selem=selem)
+        # extracts value channel of frame--including selem ruins segmentation
+        val = get_val_channel(frame)
         # highlights bubbles in the given frame
-        bubbles_bw = highlight_bubble_hyst(val, bkgd, th_lo, th_hi, width_border, 
-                                      selem, min_size)
+        bubbles_bw = highlight_bubble_method(val, bkgd, *args)
+
         # finds bubbles and assigns IDs to track them, saving to archive
         frame_labeled = skimage.measure.label(bubbles_bw)
         ID_curr = assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive,
                                  ID_curr, flow_dir, fps, pix_per_um, width_border)
         
-        if (f % report_freq) == 0:
+        if (f % report_freq*skip) == 0:
             print('Processed frame {0:d} of range {1:d}:{2:d}:{3:d}.' \
                   .format(f, start_frame, skip, end_frame))
 
@@ -915,8 +1027,9 @@ def track_bubble(vid_filepath, bkgd, th_lo, th_hi, flow_dir, pix_per_um,
         return bubbles_archive
 
     
-def test_track_bubble(vid_filepath, bubbles, frame_IDs, bkgd, th_lo, th_hi, pix_per_um, 
-                      width_border=10, selem=None, min_size=None, start_frame=0, 
+def test_track_bubble(vid_filepath, bkgd, highlight_bubble_method, args, 
+                      pix_per_um, bubbles, frame_IDs, 
+                      width_border=10, start_frame=0, 
                       end_frame=-1, skip=1, num_colors=10, time_sleep=2, 
                       brightness=3.0, fig_size_red=0.5, save_png_folder=None,
                       show_fig=True):
@@ -930,7 +1043,8 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, bkgd, th_lo, th_hi, pix_
         end_frame = vid.count_frames(vid_filepath)
         
     # creates figure for displaying frames with labeled bubbles
-    p, im = plot.format_frame(plot.bokehfy(bkgd), pix_per_um, fig_size_red, brightness=brightness)
+    p, im = plot.format_frame(plot.bokehfy(bkgd), pix_per_um, fig_size_red, 
+                              brightness=brightness)
     if show_fig:
         show(p, notebook_handle=True)
     # loops through frames
@@ -939,33 +1053,40 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, bkgd, th_lo, th_hi, pix_
         print('Analyzing frame # {0:d}.'.format(f))
         # gets value channel of frame for processing
         frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
-        val = get_val_channel(frame, selem=selem) 
+        val = get_val_channel(frame) 
         # processes frame
-        bubble = highlight_bubble_hyst(val, bkgd, th_lo, th_hi, width_border, 
-                                  selem, min_size)
+        bubble = highlight_bubble_method(val, bkgd, *args)
         # labels bubbles
         frame_labeled, num_labels = skimage.measure.label(bubble, return_num=True)
         # ensures that the same number of IDs are provided as objects found
         assert len(frame_IDs[f]) == num_labels, \
             'improc.test_track_bubble() has label mismatch for frame {0:d}.'.format(f) \
-            + 'num_labels = {0:d} and number of frame_IDs = {1:d}'.format(num_labels, len(frame_IDs[f]))
+            + 'num_labels = {0:d} and number of frame_IDs = {1:d}' \
+                .format(num_labels, len(frame_IDs[f]))
         # assigns IDs to pixels of each bubble--sort of helps with color-coding
         IDs = frame_IDs[f]
         frame_relabeled = np.zeros(frame_labeled.shape)
         for ID in IDs:
             # finds label associated with the bubble with this id
             rc, cc = bubbles[ID].get_prop('centroid', f)
-            label = frame_labeled[int(rc), int(cc)]
-            frame_relabeled[frame_labeled==label] = (ID+1)%255 # re-indexes from 1
-        frame_colored = skimage.color.label2rgb(frame_relabeled, image=frame, 
+            label = find_label(frame_labeled, rc, cc)
+            # re-indexes from 1-255 for proper coloration by label2rgb
+            # (so 0 can be bkgd)
+            new_ID = (ID % 255) + 1
+            frame_relabeled[frame_labeled==label] = new_ID
+          
+        frame_adj = adjust_brightness(frame, brightness)
+        frame_colored = skimage.color.label2rgb(frame_relabeled, image=frame_adj, 
                                                 bg_label=0)
  
         # converts frame from one-scaled to 255-scaled
         frame_disp = fn.one_2_uint8(frame_colored)
         for ID in IDs:
+            # shows number ID of bubble in image
             centroid = bubbles[ID].get_prop('centroid', f)
             x = int(centroid[1])
             y = int(centroid[0])
+            # text of number ID is black if on the border of the image, white o/w
             white = (255, 255, 255)
             black = (0, 0, 0)
             if bubbles[ID].get_prop('on border', f):
@@ -975,8 +1096,7 @@ def test_track_bubble(vid_filepath, bubbles, frame_IDs, bkgd, th_lo, th_hi, pix_
             frame_disp = cv2.putText(img=frame_disp, text=str(ID), org=(x, y), 
                                     fontFace=0, fontScale=2, color=color, 
                                     thickness=3)
-        frame_disp = adjust_brightness(plot.bokehfy(frame_disp), brightness)
-        im.data_source.data['image']=[frame_disp]
+        im.data_source.data['image']=[plot.bokehfy(frame_disp)]
         push_notebook()
         time.sleep(time_sleep)
         

@@ -10,6 +10,7 @@ fitting, and analyzing geometric objects.
 
 import numpy as np
 import scipy.optimize
+import scipy.interpolate
 
 
 def fit_circle(x,y,center_estimate=(0,0)):
@@ -96,6 +97,33 @@ def generate_ellipse(R1,R2,center,theta,N=100):
     t = np.linspace(0.0,2.0*np.pi,N)
     x = R1*np.cos(t)*np.cos(theta) - R2*np.sin(t)*np.sin(theta) + center[0]
     y = R1*np.cos(t)*np.sin(theta) + R2*np.sin(t)*np.cos(theta) + center[1]
+    return x,y
+
+
+def generate_polygon(x,y,N):
+    """
+    Generate an array of x and y values that lie evenly spaced along a polygon
+    defined by the x and y values where it is assumed that the first value
+    is also the last value to close the polygon
+    """
+    # Add the first point to the end of the list and convert to array if needed
+    if type(x) == list:
+        x = np.array(x + [x[0]])
+        y = np.array(y + [y[0]])
+    else:
+        x = np.append(x,x[0])
+        y = np.append(y,y[0])
+        
+    # Parameterize the arrays and interpolate
+    d = [np.linalg.norm(np.array([x[i],y[i]])-np.array([x[i+1],y[i+1]]))
+         for i in range(len(x)-1)]
+    d = np.cumsum([0]+d)
+    t = np.linspace(0,d[-1],N)
+    fx = scipy.interpolate.interp1d(d,x)
+    fy = scipy.interpolate.interp1d(d,y)
+    x = fx(t)
+    y = fy(t)
+    
     return x,y
 
 

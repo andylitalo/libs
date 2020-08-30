@@ -22,7 +22,7 @@ import improc
 import vid
 
 
-def bokehfy(im, vert_flip=0):
+def bokehfy(im, vert_flip=True):
     """
     Formats image for display with Bokeh. Can accommodate boolean, 0-1 scaled
     floats, and 0-255 scaled uint8 images.
@@ -31,9 +31,10 @@ def bokehfy(im, vert_flip=0):
     ----------
     im : numpy array
         Image to be formatted for Bokeh
-    vert_flip : int
-        Flag indcating if the image should be flipped. 0 flips vertically 
-        with cv2.flip().
+    vert_flip : bool
+        Flag indicating if the image should be flipped using cv2.flip().
+        Used because Bokeh inherently flips objects, so flipping them before-
+        hand cancels the effect.
         
     Returns
     -------
@@ -56,7 +57,8 @@ def bokehfy(im, vert_flip=0):
     # converts gray scale (2d) images to RGBA
     elif len(im.shape) == 2:
         im = cv2.cvtColor(im, cv2.COLOR_GRAY2RGBA)
-    im = cv2.flip(im, vert_flip) # because Bokeh flips vertically
+    if vert_flip:
+        im = cv2.flip(im, 0) # because Bokeh flips vertically
     
     return im
 
@@ -152,11 +154,12 @@ def six_frame_eda(vid_filepath, f, params, highlight_method, pix_per_um,
     frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
     # converts to HSV format
     val = improc.get_val_channel(frame)
+    # highlights bubbles and shows each step in the process (6 total)
     all_steps = highlight_method(val, *params, ret_all_steps=True)
-    im_diff, thresh_bw, closed_bw, bubble_bw, bubble_part_filled, bubble = all_steps
+    im_diff, thresh_bw, closed_bw, bubble_bw, bubble = all_steps
 
     # collects images to display
-    im_list = [bokehfy(val), bokehfy(im_diff), 
+    im_list = [bokehfy(val), bokehfy(improc.adjust_brightness(im_diff, 3.0)), 
                bokehfy(thresh_bw), bokehfy(closed_bw),
               bokehfy(bubble_bw), bokehfy(bubble)]
     title_list = ['Frame {0:d}: Value Channel (HSV)'.format(f), 

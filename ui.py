@@ -196,34 +196,34 @@ def get_rect_mask_data(im,maskFile,check=False):
     return maskData
 
 
-def get_polygonal_mask_data(im,maskFile,check=False):
+def get_polygonal_mask_data(im, mask_file, check=False):
     """
     Shows user masks overlayed on given image and asks through a dialog box
     if they are acceptable. Returns True for 'yes' and False for 'no'.
     """
     try:
-        with open(maskFile, 'rb') as f:
-            maskData = pkl.load(f)
+        with open(mask_file, 'rb') as f:
+            mask_data = pkl.load(f)
     except:
         print('Mask file not found, please create it now.')
-        maskData = mask.create_polygonal_mask_data(im,maskFile)
+        mask_data = mask.create_polygonal_mask_data(im, mask_file)
 
     while check:
         plt.figure('Evaluate accuracy of predrawn masks for your video')
-        maskedImage = mask.mask_image(im,maskData['mask'])
-        plt.imshow(maskedImage)
+        masked_image = mask.mask_image(im, mask_data['mask'])
+        plt.imshow(masked_image)
         # ask if user wishes to keep current mask (header, question)
         response = messagebox.askyesno('User Input Required', 'Do you wish to keep' + \
                             ' the current mask?')
         plt.close()
         if response:
-            return maskData
+            return mask_data
 
         else:
             print('Existing mask rejected, please create new one now.')
-            maskData = mask.create_polygonal_mask_data(im,maskFile)
+            mask_data = mask.create_polygonal_mask_data(im, mask_file)
 
-    return maskData
+    return mask_data
 
 
 def get_mask_data(maskFile,v,hMatrix=None,check=False):

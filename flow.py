@@ -21,29 +21,32 @@ def get_dp_R_i_v_max(eta_i, eta_o, L, Q_i, Q_o, R_o, SI=False):
     no-stress along the interface between inner and outer streams. See 
     20200323_cap_dim_calc.nb Mathematica notebook for details.
     
-    Inputs:
-        eta_i : float
-            viscosity of inner stream [Pa.s]
-        eta_o : float
-            viscosity of outer stream [Pa.s]
-        L : float
-            length of observation capillary [cm]
-        Q_i : float
-            flow rate of inner stream [uL/min]
-        Q_o : float
-            flow rate of outer stream [uL/min]
-        R_o : float
-            radius of outer stream (half of inner diameter of capillary) [um]
-        SI : bool (opt)
-            If True, treats all values as their SI units instead of the units given here
+    Parameters
+    ----------
+    eta_i : float
+        viscosity of inner stream [Pa.s]
+    eta_o : float
+        viscosity of outer stream [Pa.s]
+    L : float
+        length of observation capillary [cm]
+    Q_i : float
+        flow rate of inner stream [uL/min]
+    Q_o : float
+        flow rate of outer stream [uL/min]
+    R_o : float
+        radius of outer stream (half of inner diameter of capillary) [um]
+    SI : bool (opt)
+        If True, treats all values as their SI units instead of the units given here
             
-     Returns:
-         dp : float
-             pressure drop from entrance of observation capillary to exit [bar]
-         R_i : float
-             radius of inner stream [um]
-         v_max : float
-             maximum velocity (center of inner stream) [mm/s]
+    Returns
+    -------
+    dp : float
+        pressure drop from entrance of observation capillary to exit [bar]
+    R_i : float
+        radius of inner stream [um]
+    v_max : float
+        maximum velocity (center of inner stream) [mm/s]
+        
     """
     # converts parameters to SI if not already done so
     if not SI:

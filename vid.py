@@ -18,6 +18,8 @@ import improc
 import mask
 import plotimproc as plot
 
+
+
 def count_frames(path, override=False):
     """
     This method comes from https://www.pyimagesearch.com/2017/01/09/
@@ -34,8 +36,8 @@ def count_frames(path, override=False):
             Uses slower, manual counting if set to True
             
     Returns:
-        n_frames : int
-            Number of frames in the video. -1 is passed if fails completely.
+    n_frames : int
+        Number of frames in the video. -1 is passed if fails completely.
     """
     video = cv2.VideoCapture(path)
     n_frames = 0
@@ -120,7 +122,7 @@ def extract_frame(Vid,nFrame,hMatrix=None,maskData=None,filterFrame=False,
     return frame
 
 
-def load_frame(vid_filepath, num, vert_flip=0, bokeh=True):
+def load_frame(vid_filepath, num, vert_flip=True, bokeh=True):
     """Loads frame from video using OpenCV and prepares for display in Bokeh."""
     # assert num < count_frames(vid_filepath), 'Frame number in vid.load_frame() must be less than total frames.'
     cap = cv2.VideoCapture(vid_filepath)
@@ -139,7 +141,7 @@ def read_frame(cap, num):
     return frame 
 
 
-def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=0, 
+def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=True, 
                fig_size_red=0.5, brightness=1.0, show_fig=True):
     """
     vert_flip:  # code for flipping vertically with cv2.flip()
@@ -156,7 +158,7 @@ def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=0,
 
 
 def view_video(vid_filepath, start_frame, pix_per_um, time_sleep=0.3, 
-               brightness=1.0, vert_flip=0, show_frame_num=False):
+               brightness=1.0, vert_flip=True, show_frame_num=False):
     """
     vert_flip:  # code for flipping vertically with cv2.flip()
     Functions and setup were adapted from:
