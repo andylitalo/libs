@@ -26,6 +26,30 @@ def bool_2_uint8(bool_arr):
     return (255*bool_arr).astype('uint8')
 
 
+def get_fps(vid_filepath, prefix):
+    """
+    Gets the frames per second from the filepath of the video.
+
+    Parameters
+    ----------
+    vid_filepath : string
+        Filepath to video with frames per second in characters following prefix.
+    prefix : string
+        prefix given to all videos before their specs, e.g., 'v360_co2_'
+    Returns
+    -------
+    fps : int
+        frames per second of video.
+
+    """
+    i0 = vid_filepath.rfind('\\')
+    filename = vid_filepath[i0:]
+    i1 = filename.find(prefix) + len(prefix)
+    i2 = filename[i1:].find('_')
+    fps = int(filename[i1:i1+i2])
+    
+    return fps
+    
 def is_cv3():
     """
     Checks if the version of OpenCV is cv3.

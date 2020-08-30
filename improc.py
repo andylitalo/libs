@@ -28,6 +28,7 @@ import scipy.ndimage
 import vid
 import fn
 import plotimproc as plot
+import geo
 
 # imports custom classes (with reload clauses)
 import classes
@@ -40,7 +41,8 @@ options = ChromeOptions()
 options.add_argument('--headless')
 web_driver = Chrome(executable_path=r'C:\Users\andyl\anaconda3\chromedriver.exe', options=options)
 
-
+# CONVERSION FACTORS
+um_per_m = 1E6
 
 ############################# METHOD DEFINITIONS ##############################
 def adjust_brightness(im, brightness, sat=255):
@@ -109,7 +111,8 @@ def average_rgb(im):
 
 
 def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr, 
-                   flow_dir, fps, pix_per_um, width_border):
+                   flow_dir, fps, pix_per_um, width_border, row_lo, row_hi, 
+                   v_max):
     """
     Assigns Bubble objects with unique IDs to the labeled objects on the video
     frame provided. This method is used on a single frame in the context of
@@ -134,7 +137,7 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
     ID_curr : int
         Next ID number to be assigned (increasing order)
     flow_dir : numpy array of 2 floats
-        Unit vector indicating the flow direction
+        Unit vector indicating the flow direction. Should be in (row, col).
     fps : float
         Frames per second of video
     pix_per_um : float
@@ -142,6 +145,12 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
     width_border : int
         Number of pixels to remove from border for image processign in
         highlight_bubble()
+    row_lo : int
+        Row of lower inner wall
+    row_hi : int
+        Row of upper inner wall
+    v_max : float
+        Maximum velocity expected due to Poiseuille flow [pix/s]
         
     Returns
     -------
@@ -185,12 +194,15 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
     # otherwise, assigns bubbles in current frames to previous objects based
     # on distance off flow axis and other parameters (see bubble_distance())
     else:
-        # grabs the set of object IDs from the previous farme
+        # grabs the set of object IDs from the previous frame
         IDs = list(bubbles_prev.keys())
         # computes M x N matrix of distances (M = # bubbles in previous frame,
         # N = # bubbles in current frame)
         d_mat = bubble_d_mat(list(bubbles_prev.values()), 
-                             bubbles_curr, flow_dir)
+                             bubbles_curr, flow_dir, row_lo, row_hi, v_max, fps)
+        print(bubbles_prev.values())
+        print(bubbles_curr)
+        print(d_mat)
         
         ### SOURCE: Much of the next is directly copied from [1]
         # in order to perform this matching we must (1) find the
@@ -199,10 +211,13 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
         # with the smallest value is at the *front* of the index
         # list
         rows = d_mat.min(axis=1).argsort()
+        print(d_mat.min(axis=1))
+        print(rows)
         # next, we perform a similar process on the columns by
         # finding the smallest value in each column and then
         # sorting using the previously computed row index list
         cols = d_mat.argmin(axis=1)[rows]
+        print(cols)
         # in order to determine if we need to update, register,
         # or deregister an object we need to keep track of which
         # of the rows and column indexes we have already examined
@@ -211,7 +226,11 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
         
         # loops over the combination of the (row, column) index
         # tuples
+        print("LOOP")
         for (row, col) in zip(rows, cols):
+            print((row,col))
+            print(rows_used)
+            print(cols_used)
             # if we have already examined either the row or
             # column value before, ignores it
             if row in rows_used or col in cols_used:
@@ -268,6 +287,7 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
 def bubble_distance(bubble1, bubble2, axis, min_travel=0, upstream_penalty=1E5, 
                     min_off_axis=4, off_axis_steepness=0.3):
     """
+    LEGACY
     Computes the distance between each pair of points in the two sets
     perpendicular to the axis. All inputs must be numpy arrays.
     Wiggle room gives forgiveness for a few pixels in case the bubble is
@@ -277,11 +297,8 @@ def bubble_distance(bubble1, bubble2, axis, min_travel=0, upstream_penalty=1E5,
     c1 = np.array(bubble1['centroid'])
     c2 = np.array(bubble2['centroid'])
     diff = c2 - c1
-    # computes component of projection along axis
-    comp = np.dot(diff, axis)
-    # computes projection along flow axis
-    proj =  comp*axis
-    d_off_axis = np.linalg.norm(diff - proj)
+    # computes components along and off axis
+    comp, d_off_axis = geo.calc_comps(diff, axis)
     # adds huge penalty if second bubble is upstream of first bubble and a 
     # moderate penalty if it is off the axis
     #np.exp(off_axis_steepness*(d_off_axis-min_off_axis)) + \
@@ -290,7 +307,50 @@ def bubble_distance(bubble1, bubble2, axis, min_travel=0, upstream_penalty=1E5,
     return d
 
 
-def bubble_d_mat(bubbles1, bubbles2, axis):
+def bubble_distance_v(bubble1, bubble2, axis, row_lo, row_hi, v_max, fps,
+                      min_travel=0, upstream_penalty=1E5, 
+                    min_off_axis=4, off_axis_steepness=0.3,
+                    alpha=1, beta=0.3):
+    """
+    Computes the distance between each pair of points in the two sets
+    perpendicular to the axis. All inputs must be numpy arrays.
+    Wiggle room gives forgiveness for a few pixels in case the bubble is
+    stagnant but processing causes the centroid to move a little.
+    # TODO incorporate velocity profile into objective
+    """
+    # computes distance between the centroids of the two bubbles [row, col]
+    c1 = np.array(bubble1['centroid'])
+    c2 = np.array(bubble2['centroid'])
+    diff = c2 - c1
+    # computes components on and off axis
+    comp, d_off_axis = geo.calc_comps(diff, axis)
+    
+    # computes average distance off central flow axis [pix]
+    row_center = (row_lo + row_hi)/2
+    origin = np.array([row_center, 0])
+    rz1 = c1 - origin
+    _, r1 = geo.calc_comps(rz1, axis)
+    rz2 = c2 - origin
+    _, r2 = geo.calc_comps(rz2, axis)    
+    r = (r1 + r2)/2
+    # computes inner stream radius [pix]
+    R = np.abs(row_lo - row_hi)
+    # computes velocity assuming Poiseuille flow [pix/s]
+    v = v_max*(1 - (r/R)**2)
+    # time step per frame [s]
+    dt = 1/fps
+    # expected distance along projected axis [pix]
+    comp_expected = v*dt
+     
+    # adds huge penalty if second bubble is upstream of first bubble and a 
+    # moderate penalty if it is off the axis or far from expected position
+    d = alpha*d_off_axis + beta*(comp - comp_expected)**2 + \
+        upstream_penalty*(comp < min_travel) 
+    
+    return d
+
+
+def bubble_d_mat_legacy(bubbles1, bubbles2, axis):
     """
     Computes the distance between each pair of bubbles and organizes into a 
     matrix.
@@ -301,6 +361,22 @@ def bubble_d_mat(bubbles1, bubbles2, axis):
     for i, bubble1 in enumerate(bubbles1):
         for j, bubble2 in enumerate(bubbles2):
             d_mat[i,j] = bubble_distance(bubble1, bubble2, axis)
+            
+    return d_mat
+
+
+def bubble_d_mat(bubbles1, bubbles2, axis, v_max, row_lo, row_hi, fps):
+    """
+    Computes the distance between each pair of bubbles and organizes into a 
+    matrix.
+    """
+    M = len(bubbles1)
+    N = len(bubbles2)
+    d_mat = np.zeros([M, N])
+    for i, bubble1 in enumerate(bubbles1):
+        for j, bubble2 in enumerate(bubbles2):
+            d_mat[i,j] = bubble_distance_v(bubble1, bubble2, axis, v_max, 
+                                           row_lo, row_hi, fps)
             
     return d_mat
    
@@ -488,7 +564,7 @@ def get_val_channel(frame, selem=None):
     # Convert reference frame to HSV
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     # Only interested in "value" channel to distinguish bubbles, filters result
-    val = skimage.filters.median(hsv[:,:,2], selem=selem).astype('uint8')
+    val = hsv[:,:,2] #skimage.filters.median(hsv[:,:,2], selem=selem).astype('uint8')
     
     return val
 
@@ -791,6 +867,31 @@ def one_2_uint8(im, copy=True):
     return (255*im).astype('uint8')
 
 
+def prep_for_mpl(im):
+    """
+    Prepares an image for display in matplotlib's imshow() method.
+
+    Parameters
+    ----------
+    im : (M x N x 3) or (M x N) numpy array of uint8 or float
+        Image to convert.
+
+    Returns
+    -------
+    im_p : same dims as im, numpy array of uint8
+        Image prepared for matplotlib's imshow()
+
+    """
+    if is_color(im):
+        im_p = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+    else:
+        im_p = np.copy(im)
+    im_p = 255.0 / np.max(im_p) * im_p
+    im_p = im_p.astype('uint8')
+    
+    return im_p
+
+    
 def proc_frames_thread(fvs, alg, args, num_frames=100):
     """
     Processes frames using threading for efficiency. Applies given algorithm
@@ -987,11 +1088,16 @@ def thresh_im(im, thresh=-1, c=5):
 
 
 def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args, 
-                 pix_per_um, flow_dir, ret_IDs=False, report_freq=10, 
-                 width_border=10, fps=1070, start_frame=0, end_frame=-1, 
-                 skip=1):
+                 pix_per_um, flow_dir, row_lo, row_hi, 
+                   v_max, prefix, ret_IDs=False, 
+                 report_freq=10, width_border=10, start_frame=0,
+                 end_frame=-1, skip=1):
     """
+    flow_dir should be in (row, col) format.
+    v_max [=] [m/s]
     """
+    # converts max velocity from [m/s] to [pix/s]
+    v_max *= um_per_m*pix_per_um
     # initializes ordered dictionary of bubble data from past frames and archive of all data
     bubbles_prev = OrderedDict()
     bubbles_archive = OrderedDict()
@@ -1000,7 +1106,9 @@ def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
     # chooses end frame to be last frame if given as -1
     if end_frame == -1:
         end_frame = vid.count_frames(vid_filepath)
-        
+      
+    # extracts fps from video filepath
+    fps = fn.get_fps(vid_filepath, prefix)
     # loops through frames of video
     for f in range(start_frame, end_frame, skip):
         # loads frame from video file
@@ -1012,8 +1120,10 @@ def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
 
         # finds bubbles and assigns IDs to track them, saving to archive
         frame_labeled = skimage.measure.label(bubbles_bw)
-        ID_curr = assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive,
-                                 ID_curr, flow_dir, fps, pix_per_um, width_border)
+        ID_curr = assign_bubbles(frame_labeled, f, bubbles_prev, 
+                                 bubbles_archive, ID_curr, flow_dir, fps, 
+                                 pix_per_um, width_border, row_lo, row_hi, 
+                                 v_max)
         
         if (f % report_freq*skip) == 0:
             print('Processed frame {0:d} of range {1:d}:{2:d}:{3:d}.' \

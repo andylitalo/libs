@@ -13,6 +13,34 @@ import scipy.optimize
 import scipy.interpolate
 
 
+def calc_comps(vec, axis):
+    """
+    Computes distances along and off axis of given vector.
+
+    Parameters
+    ----------
+    vec : 2-tuple of floats
+        Vector giving coordinates of point.
+    axis : 2-tuple of floats
+        Vector indicating axis of reference
+
+    Returns
+    -------
+    comp : float
+        component along the given axis
+    d_off_axis : float
+        Distance of vector off given axis.
+
+    """
+    # computes component of projection along axis
+    comp = np.dot(vec, axis)
+    # computes projection along flow axis
+    proj =  comp*axis
+    d_off_axis = np.linalg.norm(vec - proj)
+    
+    return comp, d_off_axis
+    
+    
 def fit_circle(x,y,center_estimate=(0,0)):
     """
     Fit the x and y points to a circle. Returns the circle's radius, center,

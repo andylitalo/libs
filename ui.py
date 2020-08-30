@@ -21,21 +21,33 @@ import improc
 
 
 
-def click_flow_dir(im):
+def click_flow_dir(im, msg='', return_origin=False):
     """
     User clicks along the inner wall of the capillary to indicate the flow
     direction in a vector (tuple). User must enter the inline command
     "%matplotlib qt" to get a pop-out plot for using this function.
+    
+    Parameters
+    ----------
+    im : (M x N x 3) or (M x N) numpy array of floats or uint8s
+        Image that will be shown for the user to click the flow direction
+    return_origin : bool, optional
+        If True, method also returns coordinates of first click.
+    
+    Returns
+    -------
+    flow_dir : 2-tuple of floats
+        Unit vector in (x,y) indicating direction of flow
+    origin : 2-tuple of floats, optional
+        Returned if return_origin is True. Gives (x,y) coords. of first click.
+        
     """
     # formats image for use in matplotlib's imshow
-    if improc.is_color(im):
-        im_p = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-    else:
-        im_p = np.copy(im)
-    im_p = 255.0 / np.max(im_p) * im_p
-    im_p = im_p.astype('uint8')
-    # collects two points from clicks defining the flow direction from the inner wall
-    xy_vals = define_outer_edge(im_p, 'polygon', 'right-click 2 pts left-to-right along inner wall, then left-click')
+    im_p = improc.prep_for_mpl(im)
+    # collects 2 pts from clicks defining the flow direction along inner wall
+    if msg == '':
+        msg = 'right-click 2 pts left-to-right along inner wall, then left-click'
+    xy_vals = define_outer_edge(im_p, 'polygon', message=msg)
     # computes coordinates of vector from clicks
     dx = xy_vals[1][0]-xy_vals[0][0]
     dy = xy_vals[1][1]-xy_vals[0][1]
@@ -43,7 +55,11 @@ def click_flow_dir(im):
     d = np.sqrt(dx**2 + dy**2)
     flow_dir = np.array([dx / d, dy / d])
  
-    return flow_dir
+    if return_origin:
+        origin = xy_vals[0]
+        return flow_dir, origin
+    else:
+        return flow_dir
 
 
 def click_for_next(ax, msg='Center-click for next image.'):
@@ -56,6 +72,43 @@ def click_for_next(ax, msg='Center-click for next image.'):
         pp = get_pts(1)
         if len(pp) < 1:
             break
+        
+        
+def click_z_origin(im):
+    """
+    Records user clicks that indicate the desired origin and z-axis in an 
+    image. These can be used to calculate the r-coordinate measured off the
+    z-axis.
+
+    Parameters
+    ----------
+    im : (M x N x 3) or (M x N) numpy array of floats or uint8s
+        Image that will be shown for the user to click origin and z axis.
+
+    Returns
+    -------
+    z : 2-tuple of float
+        Normalized vector indicating direction of z-axis (flow axis)
+    o : 2-tuple of float
+        (x,y) coordinates of origin of central axis of capillary
+
+    """
+    # creates messages for first and second rounds of clicking
+    msg_lo = 'right-click 2 pts left-to-right along lower inner wall, then left-click'
+    msg_hi = 'right-click 2 pts left-to-right along upper inner wall, then left-click'
+    # collects z-axis direction and origin from clicks along lower and upper walls
+    z_lo, o_lo = click_flow_dir(im, msg=msg_lo, return_origin=True)
+    z_hi, o_hi = click_flow_dir(im, msg=msg_hi, return_origin=True)
+    # averages z-axis for better estimate of true value
+    z_raw = ((z_lo[0]+z_hi[0])/2, (z_lo[1]+z_hi[1])/2)
+    # normalizes z-axis
+    dz = np.sqrt(z_raw[0]**2 + z_raw[1]**2)
+    z = z_raw / dz
+    # rows of lower and upper inner walls
+    row_lo = o_lo[1]
+    row_hi = o_hi[1]
+ 
+    return z, row_lo, row_hi
 
     
 def define_outer_edge(image,shapeType,message=''):
