@@ -206,9 +206,6 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
         # N = # bubbles in current frame)
         d_mat = bubble_d_mat(list(bubbles_prev.values()), 
                              bubbles_curr, flow_dir, row_lo, row_hi, v_max, fps)
-        print(bubbles_prev.values())
-        print(bubbles_curr)
-        print(d_mat)
         
         ### SOURCE: Much of the next is directly copied from [1]
         # in order to perform this matching we must (1) find the
@@ -217,13 +214,10 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
         # with the smallest value is at the *front* of the index
         # list
         rows = d_mat.min(axis=1).argsort()
-        print(d_mat.min(axis=1))
-        print(rows)
         # next, we perform a similar process on the columns by
         # finding the smallest value in each column and then
         # sorting using the previously computed row index list
         cols = d_mat.argmin(axis=1)[rows]
-        print(cols)
         # in order to determine if we need to update, register,
         # or deregister an object we need to keep track of which
         # of the rows and column indexes we have already examined
@@ -232,11 +226,7 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
         
         # loops over the combination of the (row, column) index
         # tuples
-        print("LOOP")
         for (row, col) in zip(rows, cols):
-            print((row,col))
-            print(rows_used)
-            print(cols_used)
             # if we have already examined either the row or
             # column value before, ignores it
             if row in rows_used or col in cols_used:
@@ -318,7 +308,7 @@ def bubble_distance(bubble1, bubble2, axis, min_travel=0, upstream_penalty=1E5,
 def bubble_distance_v(bubble1, bubble2, axis, row_lo, row_hi, v_max, fps,
                       min_travel=0, upstream_penalty=1E5, 
                     min_off_axis=4, off_axis_steepness=0.3,
-                    alpha=1, beta=0.3):
+                    alpha=0.25, beta=4):
     """
     Computes the distance between each pair of points in the two sets
     perpendicular to the axis. All inputs must be numpy arrays.
@@ -352,7 +342,7 @@ def bubble_distance_v(bubble1, bubble2, axis, row_lo, row_hi, v_max, fps,
      
     # adds huge penalty if second bubble is upstream of first bubble and a 
     # moderate penalty if it is off the axis or far from expected position
-    d = alpha*d_off_axis + beta*(comp - comp_expected)**2 + \
+    d = alpha*d_off_axis + beta*((comp - comp_expected)/comp_expected)**2 + \
         upstream_penalty*(comp < min_travel) 
     
     return d
@@ -613,8 +603,8 @@ def highlight_bubble_hyst(frame, bkgd, th_lo, th_hi, width_border, selem,
         return bubble
 
 
-def highlight_bubble_hyst_thresh(frame, bkgd, th, th_lo, th_hi, min_size_lo,
-                                 min_size_hi, width_border, selem, mask_data,
+def highlight_bubble_hyst_thresh(frame, bkgd, th, th_lo, th_hi, min_size_hyst,
+                                 min_size_th, width_border, selem, mask_data,
                                  ret_all_steps=False):
     """
     Version of highlight_bubble() that first performs a low threshold and 
@@ -643,7 +633,7 @@ def highlight_bubble_hyst_thresh(frame, bkgd, th, th_lo, th_hi, min_size_lo,
     closed_bw_1 = skimage.morphology.binary_closing(thresh_bw_1, selem=selem)
     # removes small objects
     bubble_bw_1 = skimage.morphology.remove_small_objects(closed_bw_1.astype(bool),
-                                                        min_size=min_size_hi)
+                                                        min_size=min_size_th)
     # converts image to uint8 type from bool
     bubble_bw_1 = 255*bubble_bw_1.astype('uint8')
     # fills enclosed holes with white, but leaves open holes black
@@ -658,7 +648,7 @@ def highlight_bubble_hyst_thresh(frame, bkgd, th, th_lo, th_hi, min_size_lo,
     closed_bw_2 = skimage.morphology.binary_closing(thresh_bw_2, selem=selem)
     # removes small objects
     bubble_bw_2 = skimage.morphology.remove_small_objects(closed_bw_2.astype(bool),
-                                                        min_size=min_size_lo)
+                                                        min_size=min_size_hyst)
     # converts image to uint8 type from bool
     bubble_bw_2 = 255*bubble_bw_2.astype('uint8')
     # fills enclosed holes with white, but leaves open holes black
