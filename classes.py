@@ -6,6 +6,11 @@ Created on Mon May 11 11:24:27 2020
 the Bubble class stores properties of a bubble from a video, both measured and 
 processed post factum.
 """
+import numpy as np
+
+# CONVERSIONS
+um_2_m = 1E-6
+
 
 class Bubble:
     def __init__(self, ID, fps, frame_dim, flow_dir, pix_per_um, props_raw=[]):
@@ -69,6 +74,27 @@ class Bubble:
                                   set(props.keys())))
         for key in keys_not_provided:
             self.props_raw[key] += [None]
+            
+    def proc_props(self):
+        """Processes data to compute processed properties, mostly averages."""
+        # computes average area
+        area = self.props_raw['area']
+        self.props_proc['average area'] = np.mean(area)
+        
+        # computes average speed
+        v_list = []
+        fps = self.metadata['fps']
+        dt = 1/fps # [s]
+        flow_dir = self.metadata['flow_dir']
+        pix_per_um = self.metadata['pix_per_um']
+        frame_list = self.props_raw['frame']
+        centroid_list = self.props_raw['centroid']
+        for i in range(len(frame_list)-1):
+            diff = np.array(centroid_list[i+1]) - np.array(centroid_list[i])
+            d = np.dot(diff, flow_dir)/pix_per_um*um_2_m # [m]
+            v_list += [d/dt] # [m/s]
+            
+        self.props_proc['average speed'] = np.mean(v_list)
             
             
             

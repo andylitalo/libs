@@ -158,13 +158,15 @@ def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=True,
 
 
 def view_video(vid_filepath, start_frame, pix_per_um, time_sleep=0.3, 
-               brightness=1.0, vert_flip=True, show_frame_num=False):
+               brightness=1.0, vert_flip=True, show_frame_num=False,
+               fig_size_red=0.5):
     """
     vert_flip:  # code for flipping vertically with cv2.flip()
     Functions and setup were adapted from:
     https://stackoverflow.com/questions/27882255/is-it-possible-to-display-an-opencv-video-inside-the-ipython-jupyter-notebook
     """
-    p, im, cap = show_frame(vid_filepath, start_frame, pix_per_um, brightness=brightness)
+    p, im, cap = show_frame(vid_filepath, start_frame, pix_per_um, 
+                            brightness=brightness, fig_size_red=fig_size_red)
     if show_frame_num:
         f = start_frame
     while True:
