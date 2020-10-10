@@ -199,7 +199,7 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
             centroid_pred = bubbles_archive[ID].predict_centroid(f)
             # if the most recent (possibly predicted) centroid is out of bounds,
             # then the bubble object is deleted from the dictionary
-            if out_of_bounds(bubbles_prev[ID], frame_labeled.shape):
+            if out_of_bounds(centroid_pred, frame_labeled.shape):
                 del bubbles_prev[ID]
             # otherwise, predicts next centroid, keeping other props the same
             else:
@@ -398,6 +398,29 @@ def bubble_d_mat(bubbles1, bubbles2, axis, v_max, row_lo, row_hi, fps):
 
 def compute_bkgd_med(vid_filepath, num_frames=100):
     """
+    Same as compute_bkgd_med_thread() but does not use threading. More reliable
+    and predictable, but slower.
+    """
+    cap = cv2.VideoCapture(vid_filepath)
+    ret, frame = cap.read()
+    if not ret:
+        return None
+    # computes the median
+    frame_trio = proc_frames(cap, med_alg, ([frame],),
+                                    num_frames=num_frames)
+    print('finished')
+    # the median value of pixels is the first object in the frame trio list
+    bkgd_med = frame_trio[0][0].astype('uint8')
+
+    # takes value channel if color image provided
+    if len(bkgd_med.shape) == 3:
+        bkgd_med = get_val_channel(bkgd_med)
+
+    return bkgd_med
+
+
+def compute_bkgd_med_thread(vid_filepath, num_frames=100):
+    """
     Computes the background of a given number of frames of a video by computing
     the pixel-wise median of the specified number of frames. This method was
     shown to provide a good background free of moving objects but preserving
@@ -419,16 +442,18 @@ def compute_bkgd_med(vid_filepath, num_frames=100):
         subtraction.
 
     """
+    print('started')
     # initializes file video stream for threaded loading of frames
     fvs = FileVideoStream(vid_filepath).start()
+    print('thing happened')
     # reads first frame as input for the algorithm; must convert to float
     # to proceed through file video stream
     frame = fvs.read().astype(float)
-
+    print('say what?')
     # computes the median
-    frame_trio = proc_frames_thread(fvs, med_alg, ([frame],),
+    frame_trio = proc_frames_thread(fvs, med_alg_thread, ([frame],),
                                     num_frames=num_frames)
-
+    print('finished')
     # the median value of pixels is the first object in the frame trio list
     bkgd_med = frame_trio[0][0].astype('uint8')
 
@@ -819,7 +844,27 @@ def measure_labeled_im_width(im_labeled, um_per_pix):
     return mean, std
 
 
-def med_alg(fvs, frame_trio):
+def med_alg(cap, frame_trio):
+    """
+    Same as med_alg_thread but using VideoCapture obj instead of thread.
+    Slower, but more reliable and predictable operation.
+    """
+    # reads frame from file video stream
+    ret, frame = cap.read()
+    frame = frame.astype(float)
+    # adds frame to list if three frames not collected yet
+    if len(frame_trio) < 3:
+        frame_trio += [frame]
+    # if three frames collected, takes their median and sets that as the new frame in the last
+    else:
+        stacked_arr = np.stack(tuple(frame_trio), axis=0)
+        bkgd_med = np.median(stacked_arr, axis=0)
+        frame_trio = [bkgd_med]
+
+    return ret, (frame_trio,)
+
+
+def med_alg_thread(fvs, frame_trio):
     """
     Performs repeated step for algorithm to compute the pixel-wise median of
     the frames of a video. It loads two frames along with the current median
@@ -926,6 +971,36 @@ def prep_for_mpl(im):
     im_p = im_p.astype('uint8')
 
     return im_p
+
+
+def proc_frames(cap, alg, args, num_frames=100):
+    """
+    Processes frames without using threading due to unpredictable outcomes.
+    """
+    print('started proc_frames')
+    # initializes result by applying algorithm to first frame
+    ret, result = alg(cap, *args)
+    # initializes counter at 3 because the next computation will be the 3rd
+    # (args is first, result is second)
+    ctr = 3
+    # loops through frames performing algorithm to process them
+    while ret:
+
+        # computes algorithmic step
+        ret, result = alg(cap, *result)
+
+        # reports counter and progress
+        print(ctr)
+        ctr += 1
+        if ctr > num_frames:
+            break
+        if (ctr % 10) == 0:
+            print('Completed {0:d} frames of {1:d}.'.format(ctr, num_frames))
+
+    # when everything is done, releases the capture
+    cap.release()
+
+    return result
 
 
 def proc_frames_thread(fvs, alg, args, num_frames=100):

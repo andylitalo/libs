@@ -7,6 +7,7 @@ the Bubble class stores properties of a bubble from a video, both measured and
 processed post factum.
 """
 import numpy as np
+import sys
 
 # CONVERSIONS
 um_2_m = 1E-6
@@ -72,7 +73,13 @@ class Bubble:
         """props is properly organized dictionary. Only for raw properties."""
         for key in props.keys():
             if key in self.props_raw.keys():
-                self.props_raw[key] += [props[key]]
+                prop = props[key]
+                # properties provided as lists are unchanged
+                if isinstance(prop, list):
+                    self.props_raw[key] += prop
+                # properties provided as a number are converted to 1-elt list
+                else:
+                    self.props_raw[key] += [prop]
             else:
                 print('Trying to add property not in Bubble.props_raw.')
         # keys for properties not provided in list
@@ -93,8 +100,22 @@ class Bubble:
             return centroids[i_frame]
 
         # ensures at least 2 centroids
-        assert len(self.props_raw['centroid']) > 1, \
-                'bubble.predict_next_centroid() requires > 2 centroids.'
+        assert len(centroids) > 0, \
+                '{0:s} requires at least one centroid.' \
+                .format(sys._getframe().f_code.co_name)
+        assert len(frames) == len(centroids), \
+                '{0:s} requires equal # frames and centroids' \
+                .format(sys._getframe().f_code.co_name)
+
+        # if only 1 centroid provided, assume previous one was off screen in
+        # direction opposite the flow direction
+        if len(centroids) == 1:
+            # estimates previous centroid assuming just offscreen
+            centroid_prev = self.offscreen_centroid(centroids[0])
+            # inserts previous centroid and frame
+            centroids.insert(0, centroid_prev)
+            frames.insert(0, frames[0]-1)
+
         # computes linear fit of previous centroids vs. frame
         # unzips rows and columns of centroids
         rows, cols = list(zip(*centroids))
@@ -127,6 +148,42 @@ class Bubble:
         self.props_proc['average speed'] = np.mean(v_list)
 
 
+    ### HELPER FUNCTIONS ###
+    def offscreen_centroid(self, centroid):
+        """
+        Estimates previous centroid assuming just offscreen opposite flow
+        direction.
+        """
+        # extracts centroid
+        row, col = centroid
+        # gets opposite direction from flow
+        rev_dir = -np.array(self.metadata['flow_dir'])
+        frame_dim = self.metadata['frame_dim']
+        # computes steps to boundary in row and col directions
+        n_r = self.steps_to_boundary(row, frame_dim[0], rev_dir[0])
+        n_c = self.steps_to_boundary(col, frame_dim[1], rev_dir[1])
+        # takes path requiring fewest steps
+        if n_r <= n_c:
+            row_off = row + n_r*rev_dir[0]
+            col_off = col + n_r*rev_dir[1]
+        else:
+            row_off = row + n_c*rev_dir[0]
+            col_off = col + n_c*rev_dir[1]
+
+        return (row_off, col_off)
+
+    def steps_to_boundary(self, x, x_max, s, x_min=0):
+        """Computes number of steps s to boundary (x_min or x_max)."""
+        assert x_max >= x and x_min <= x, 'x must be in range (x_min, x_max).'
+        # pointing towards minimum boundary
+        if s < 0:
+            n = (x_min - x) / s
+        elif s > 0:
+            n = (x_max - x) / s
+        else:
+            n = float('inf')
+
+        return n
 
 ########################## FILEVIDEOSTREAM CLASS ##############################
 
@@ -139,7 +196,8 @@ class FileVideoStream:
     """
     Class for handling threaded loading of videos.
     Source:
-        https://www.pyimagesearch.com/2017/02/06/faster-video-file-fps-with-cv2-videocapture-and-opencv/
+    https://www.pyimagesearch.com/2017/02/06/faster-video-file-fps-with-cv2-
+    videocapture-and-opencv/
     """
     def __init__(self, path, queueSize=128):
         # initialize the file video stream along with the boolean
