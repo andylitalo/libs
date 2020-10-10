@@ -61,7 +61,28 @@ def click_flow_dir(im, msg='', return_origin=False):
     else:
         return flow_dir
 
+def click_for_length(im, just_height=False, msg='', return_origin=False):
+    """
+  
+    """
+    # formats image for use in matplotlib's imshow
+    im_p = improc.prep_for_mpl(im)
+    # collects 2 pts from clicks defining the flow direction along inner wall
+    if msg == '':
+        msg = 'right-click 2 pts spanning desired length, then left-click'
+    xy_vals = define_outer_edge(im_p, 'polygon', message=msg)
+    # computes coordinates of vector from clicks
+    dx = xy_vals[1][0]-xy_vals[0][0]
+    dy = xy_vals[1][1]-xy_vals[0][1]
+    if just_height:
+        d = dy
+    else:
+        # normalizes flow direction
+        d = np.sqrt(dx**2 + dy**2)
 
+    return d
+
+    
 def click_for_next(ax, msg='Center-click for next image.'):
     """
     Allows code to continue only after user clicks.

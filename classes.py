@@ -3,7 +3,7 @@
 Created on Mon May 11 11:24:27 2020
 
 @author: Andy
-the Bubble class stores properties of a bubble from a video, both measured and 
+the Bubble class stores properties of a bubble from a video, both measured and
 processed post factum.
 """
 import numpy as np
@@ -16,7 +16,7 @@ class Bubble:
     def __init__(self, ID, fps, frame_dim, flow_dir, pix_per_um, props_raw=[]):
         """
         frames: list of ints
-        centroids: list of tuples
+        centroids: list of tuples of (row, col) of centroids of bubbles
         areas: same as centroids
         major axes: same as centroids
         minor axes: same as centroids
@@ -26,7 +26,7 @@ class Bubble:
         average area: float
         average speed: float
         fps: float
-        
+
         true centroid is estimated location of centroid adjusted after taking
         account of the bubble being off screen/"on border."
         """
@@ -37,21 +37,26 @@ class Bubble:
         self.props_raw = {'frame':[], 'centroid':[], 'area':[],'major axis':[],
                           'minor axis':[], 'orientation':[], 'on border':[]}
         # initializes storage of processed properties
-        self.props_proc = {'average area':None, 'average speed':None, 
-                           'average orientation':None, 
+        self.props_proc = {'average area':None, 'average speed':None,
+                           'average orientation':None,
                            'average aspect ratio':None, 'true centroids':[]}
         # loads raw properties if provided
         if len(props_raw) > 0:
             self.add_props(props_raw)
-    
-    ###### ACCESSORS ######    
+
+    ###### ACCESSORS ######
     def get_metadata(self, prop):
         return self.metadata[prop]
-    
+
     def get_prop(self, prop, f):
         """Returns property at given frame f according to dictionary of frames."""
-        return self.get_props(prop)[self.get_props('frame').index(f)]
-    
+        try:
+            prop = self.get_props(prop)[self.get_props('frame').index(f)]
+            return prop
+        except ValueError:
+            print('Property {0:s} not available at frame {1:d}.'.format(prop, f))
+            return None
+
     def get_props(self, prop):
         if prop in self.props_raw.keys():
             return self.props_raw[prop]
@@ -60,8 +65,8 @@ class Bubble:
         else:
             print('Property not found in Bubble object. Returning None.')
             return None
-    
-    
+
+
     ###### MUTATORS ########
     def add_props(self, props):
         """props is properly organized dictionary. Only for raw properties."""
@@ -70,17 +75,42 @@ class Bubble:
                 self.props_raw[key] += [props[key]]
             else:
                 print('Trying to add property not in Bubble.props_raw.')
+        # keys for properties not provided in list
         keys_not_provided = (list(set(self.props_raw.keys()) - \
                                   set(props.keys())))
         for key in keys_not_provided:
             self.props_raw[key] += [None]
-            
+
+
+    def predict_centroid(self, f):
+        """Predicts next centroid based on step sizes between previous centroids."""
+        frames = self.props_raw['frame']
+        centroids = self.props_raw['centroid']
+        # no-op if centroid already provided for given frame
+        if f in frames:
+            # gets first index corresponding to requested frame
+            i_frame = next((i for i in range(len(frames)) if frames[i] == f))
+            return centroids[i_frame]
+
+        # ensures at least 2 centroids
+        assert len(self.props_raw['centroid']) > 1, \
+                'bubble.predict_next_centroid() requires > 2 centroids.'
+        # computes linear fit of previous centroids vs. frame
+        # unzips rows and columns of centroids
+        rows, cols = list(zip(*centroids))
+        a_r, b_r = np.polyfit(frames, rows, 1)
+        a_c, b_c = np.polyfit(frames, cols, 1)
+        # predicts centroid for requested frame with linear fit
+        centroid_pred = [a_r*f + b_r, a_c*f + b_c]
+        return centroid_pred
+
+
     def proc_props(self):
         """Processes data to compute processed properties, mostly averages."""
         # computes average area
         area = self.props_raw['area']
         self.props_proc['average area'] = np.mean(area)
-        
+
         # computes average speed
         v_list = []
         fps = self.metadata['fps']
@@ -93,11 +123,11 @@ class Bubble:
             diff = np.array(centroid_list[i+1]) - np.array(centroid_list[i])
             d = np.dot(diff, flow_dir)/pix_per_um*um_2_m # [m]
             v_list += [d/dt] # [m/s]
-            
+
         self.props_proc['average speed'] = np.mean(v_list)
-            
-            
-            
+
+
+
 ########################## FILEVIDEOSTREAM CLASS ##############################
 
 from threading import Thread
@@ -119,15 +149,15 @@ class FileVideoStream:
         # initialize the queue used to store frames read from
         # the video file
         self.Q = Queue(maxsize=queueSize)
-        
+
     def start(self):
         # start a thread to read frames from the file video stream
         t = Thread(target=self.update, args=())
         t.daemon = True
         t.start()
-        
+
         return self
-   
+
     def update(self):
         # keep looping infinitely
         while True:
@@ -146,15 +176,15 @@ class FileVideoStream:
                     return
    				# add the frame to the queue
                 self.Q.put(frame)
-   
+
     def read(self):
         # return next frame in the queue
         return self.Q.get()
-   
+
     def more(self):
    		# return True if there are still frames in the queue
         return self.Q.qsize() > 0
-   
+
     def stop(self):
    		# indicate that the thread should be stopped
         self.stopped = True
