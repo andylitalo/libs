@@ -942,10 +942,12 @@ def out_of_bounds(pt, shape):
     out : bool
         True if out of bounds, False if in bounds.
     """
+    # in bounds
     if pt[0] >= 0 and pt[0] < shape[0] and pt[1] >= 0 and pt[1] < shape[1]:
-        return True
-    else:
         return False
+    # otherwise, out of bounds
+    else:
+        return True
 
 
 def prep_for_mpl(im):
@@ -973,7 +975,7 @@ def prep_for_mpl(im):
     return im_p
 
 
-def proc_frames(cap, alg, args, num_frames=100):
+def proc_frames(cap, alg, args, num_frames=100, report_freq=10):
     """
     Processes frames without using threading due to unpredictable outcomes.
     """
@@ -990,11 +992,10 @@ def proc_frames(cap, alg, args, num_frames=100):
         ret, result = alg(cap, *result)
 
         # reports counter and progress
-        print(ctr)
         ctr += 1
         if ctr > num_frames:
             break
-        if (ctr % 10) == 0:
+        if (ctr % report_freq) == 0:
             print('Completed {0:d} frames of {1:d}.'.format(ctr, num_frames))
 
     # when everything is done, releases the capture
@@ -1044,7 +1045,6 @@ def proc_frames_thread(fvs, alg, args, num_frames=100):
         result = alg(fvs, *result)
 
         # reports counter and progress
-        print(ctr)
         ctr += 1
         if ctr > num_frames:
             break

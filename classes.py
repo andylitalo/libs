@@ -122,7 +122,7 @@ class Bubble:
         a_r, b_r = np.polyfit(frames, rows, 1)
         a_c, b_c = np.polyfit(frames, cols, 1)
         # predicts centroid for requested frame with linear fit
-        centroid_pred = [a_r*f + b_r, a_c*f + b_c]
+        centroid_pred = (a_r*f + b_r, a_c*f + b_c)
         return centroid_pred
 
 
