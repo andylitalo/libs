@@ -18,9 +18,9 @@ def get_dp_R_i_v_max(eta_i, eta_o, L, Q_i, Q_o, R_o, SI=False):
     stream, and the maximum velocity (found at the center of the inner stream).
     The equations were obtained by solving the Navier-Stokes equations in Stokes flow
     in a cylindrical geometery with sheath flow, assuming no-slip along the walls and
-    no-stress along the interface between inner and outer streams. See 
+    no-stress along the interface between inner and outer streams. See
     20200323_cap_dim_calc.nb Mathematica notebook for details.
-    
+
     Parameters
     ----------
     eta_i : float
@@ -37,7 +37,7 @@ def get_dp_R_i_v_max(eta_i, eta_o, L, Q_i, Q_o, R_o, SI=False):
         radius of outer stream (half of inner diameter of capillary) [um]
     SI : bool (opt)
         If True, treats all values as their SI units instead of the units given here
-            
+
     Returns
     -------
     dp : float
@@ -46,7 +46,7 @@ def get_dp_R_i_v_max(eta_i, eta_o, L, Q_i, Q_o, R_o, SI=False):
         radius of inner stream [um]
     v_max : float
         maximum velocity (center of inner stream) [mm/s]
-        
+
     """
     # converts parameters to SI if not already done so
     if not SI:
@@ -54,7 +54,7 @@ def get_dp_R_i_v_max(eta_i, eta_o, L, Q_i, Q_o, R_o, SI=False):
         Q_i /= 60E9 # converts from uL/min to m^3/s
         Q_o /= 60E9 # converts from uL/min to m^3/s
         R_o /= 1E6 # converts from um to m
-    
+
     # calculates pressure drop along observation capillary (<0) [Pa]
     dp = -(8*L)/(np.pi*R_o**6*eta_o) * (Q_i*R_o**2*eta_i*eta_o \
          + 2*(eta_o-eta_i)*np.sqrt( Q_o*R_o**4*eta_i*(Q_o*eta_i + Q_i*eta_o) )\
@@ -67,22 +67,22 @@ def get_dp_R_i_v_max(eta_i, eta_o, L, Q_i, Q_o, R_o, SI=False):
     v_max = 2*( Q_o*R_o**2*eta_i**2 + Q_i*R_o**2*eta_i*eta_o + (eta_o-eta_i)* \
                np.sqrt( Q_o*R_o**4*eta_i * (Q_o*eta_i + Q_i*eta_o) ) )/ \
             (np.pi*R_o**4*eta_i*eta_o)
-    
+
     # converts parameters to other units if SI not desired
     if not SI:
         dp /= 1E5 # converts from Pa to bar
         R_i *= 1E6 # converts from m to um
         v_max *= 1E3 # converts from m/s to mm/s
-        
+
     return dp, R_i, v_max
 
-                 
+
 def get_flow_rates_diff_mu(R_i, R_o, eta_i, eta_o, dp, L):
     """
     Computes the flow rates of inner and outer streams given properties
     of the flow. Allows for different viscosities for inner and outer
     streams. Assumes SI units.
-    
+
     Inputs:
         R_i : inner stream radius [m]
         R_o : outer stream radius [m]
@@ -100,7 +100,7 @@ def get_flow_rates_diff_mu(R_i, R_o, eta_i, eta_o, dp, L):
     Q_i = 2*np.pi*( (G*(R_o**2-R_i**2)*R_i**2)/(8*eta_o) + (G*R_i**4)/(16*eta_i) )
     # outer stream flow rate [m^3/s]
     Q_o = np.pi*G/(8*eta_o)*(R_o**2-R_i**2)**2
-    
+
     return Q_i, Q_o
 
 def get_flow_rates_fixed_speed(d_inner, v_center=1.0, ID=500):
@@ -402,10 +402,10 @@ def get_velocity(Q_i, Q_o, r_obs_cap=250):
 
 def p_pois(eta, L, R, Q):
     """
-    Computes the pressure expected down a tube with the given 
+    Computes the pressure expected down a tube with the given
     parameters based on Poiseuille's law (assumes Newtonian,
     single viscosity). Based on SI units.
-    
+
     Inputs:
         eta : viscosity [Pa.s]
         L : length of tube [m]
@@ -420,3 +420,35 @@ if __name__=='__main__':
     Q_i, Q_o = get_flow_rates_fixed_speed(20)
 
     print('Inner flow rate = %.4f mL/min and outer flow rate = %.2f mL/min' % (Q_i,Q_o))
+
+
+def v_inner(Q_i, Q_o, eta_i, eta_o, R_o, L):
+    """
+    Computes the velocity at the interface between inner and outer streams.
+
+    Parameters
+    ----------
+    Q_i : float
+        Inner stream flow rate [m^3/s]
+    Q_o : float
+        Outer stream flow rate [m^3/s]
+    eta_i : float
+        Inner stream viscosity [Pa.s]
+    eta_o : float
+        Outer stream viscosity [Pa.s]
+    R_o : float
+        Outer stream radius (radius of capillary) [m]
+    L : float
+        Length of observation capillary [m]
+
+    Returns
+    -------
+    v_inner : float
+        Velocity at the interface of the inner stream [m/s]
+    """
+    # computes pressure drop and inner stream radius
+    dp, R_i, _ = get_dp_R_i_v_max(eta_i, eta_o, L, Q_i, Q_o, R_o, SI=True)
+    G = -dp/L # pressure gradient [Pa/m]
+    v_inner = G*(R_o**2 - R_i**2) / (4*eta_o) # eqn A.10 p. 35 of YlitaloA_candidacy_report.pdf
+
+    return v_inner

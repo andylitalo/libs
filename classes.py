@@ -40,7 +40,10 @@ class Bubble:
         # initializes storage of processed properties
         self.props_proc = {'average area':None, 'average speed':None,
                            'average orientation':None,
-                           'average aspect ratio':None, 'true centroids':[]}
+                           'average aspect ratio':None, 'true centroids':[],
+                           'inner stream':-1}
+       # inner stream is 0 if bubble is likely in outer stream, 1 if
+       # likely in inner stream, and -1 if unknown or not evaluated yet
         # loads raw properties if provided
         if len(props_raw) > 0:
             self.add_props(props_raw)
@@ -146,6 +149,20 @@ class Bubble:
             v_list += [d/dt] # [m/s]
 
         self.props_proc['average speed'] = np.mean(v_list)
+
+    def classify(self, v_inner):
+        """Classifies bubble as inner or outer stream based on velocity cutoff."""
+        # computes average speed [m/s] if not done so already
+        if self.props_proc['average speed'] == None:
+            self.proc_props()
+        # classifies bubble as inner stream if velocity is greater than cutoff
+        v = self.props_proc['average speed']
+        if v >= v_inner:
+            self.props_proc['inner stream'] = 1
+        # if velocity is positive but slower than cutoff, classify as outer stream
+        elif 0 < v and v < v_inner:
+            self.props_proc['inner stream'] = 0
+        # otherwise, default value of -1 is retained
 
 
     ### HELPER FUNCTIONS ###
