@@ -1302,7 +1302,12 @@ def test_track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
 
         # converts frame from one-scaled to 255-scaled
         frame_disp = fn.one_2_uint8(frame_colored)
+
+        # prints ID number of bubble to upper-right of centroid
         for ID in IDs:
+            # does not print ID number if in the outer stream
+            if bubbles[ID].get_props('inner stream') == 0:
+                continue
             # shows number ID of bubble in image
             centroid = bubbles[ID].get_prop('centroid', f)
             x = int(centroid[1])
