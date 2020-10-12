@@ -91,6 +91,26 @@ class Bubble:
         for key in keys_not_provided:
             self.props_raw[key] += [None]
 
+    def classify(self, v_inner):
+        """
+        Classifies bubble as inner or outer stream based on velocity cutoff.
+        N.B.: If there is no inner stream (inner stream flow rate Q_i = 0),
+        then the velocity v_inner will be computed to be nan, in which case this
+        method will leave the classification as is.
+        """
+        # computes average speed [m/s] if not done so already
+        if self.props_proc['average speed'] == None:
+            self.proc_props()
+        # classifies bubble as inner stream if velocity is greater than cutoff
+        v = self.props_proc['average speed']
+        if v >= v_inner:
+            self.props_proc['inner stream'] = 1
+        # if velocity is positive but slower than cutoff, classify as outer stream
+        elif 0 < v and v < v_inner:
+            self.props_proc['inner stream'] = 0
+        # otherwise, default value of -1 is set to indicate unclear classification
+        else:
+            self.props_proc['inner stream'] = -1
 
     def predict_centroid(self, f):
         """Predicts next centroid based on step sizes between previous centroids."""
@@ -113,11 +133,13 @@ class Bubble:
         # if only 1 centroid provided, assume previous one was off screen in
         # direction opposite the flow direction
         if len(centroids) == 1:
+            centroid = centroids[0]
+            frame = frames[0]
             # estimates previous centroid assuming just offscreen
             centroid_prev = self.offscreen_centroid(centroids[0])
             # inserts previous centroid and frame
-            centroids.insert(0, centroid_prev)
-            frames.insert(0, frames[0]-1)
+            centroids = [centroid_prev, centroid]
+            frames = [frame-1, frame]
 
         # computes linear fit of previous centroids vs. frame
         # unzips rows and columns of centroids
@@ -146,23 +168,10 @@ class Bubble:
         for i in range(len(frame_list)-1):
             diff = np.array(centroid_list[i+1]) - np.array(centroid_list[i])
             d = np.dot(diff, flow_dir)/pix_per_um*um_2_m # [m]
-            v_list += [d/dt] # [m/s]
+            t = dt*(frame_list[i+1]-frame_list[i]) # [s]
+            v_list += [d/t] # [m/s]
 
         self.props_proc['average speed'] = np.mean(v_list)
-
-    def classify(self, v_inner):
-        """Classifies bubble as inner or outer stream based on velocity cutoff."""
-        # computes average speed [m/s] if not done so already
-        if self.props_proc['average speed'] == None:
-            self.proc_props()
-        # classifies bubble as inner stream if velocity is greater than cutoff
-        v = self.props_proc['average speed']
-        if v >= v_inner:
-            self.props_proc['inner stream'] = 1
-        # if velocity is positive but slower than cutoff, classify as outer stream
-        elif 0 < v and v < v_inner:
-            self.props_proc['inner stream'] = 0
-        # otherwise, default value of -1 is retained
 
 
     ### HELPER FUNCTIONS ###
