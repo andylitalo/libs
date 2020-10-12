@@ -136,7 +136,7 @@ class Bubble:
             centroid = centroids[0]
             frame = frames[0]
             # estimates previous centroid assuming just offscreen
-            centroid_prev = self.offscreen_centroid(centroids[0])
+            centroid_prev = self.offscreen_centroid(centroid)
             # inserts previous centroid and frame
             centroids = [centroid_prev, centroid]
             frames = [frame-1, frame]
@@ -188,6 +188,7 @@ class Bubble:
         # computes steps to boundary in row and col directions
         n_r = self.steps_to_boundary(row, frame_dim[0], rev_dir[0])
         n_c = self.steps_to_boundary(col, frame_dim[1], rev_dir[1])
+
         # takes path requiring fewest steps
         if n_r <= n_c:
             row_off = row + n_r*rev_dir[0]

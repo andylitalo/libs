@@ -26,6 +26,18 @@ def bool_2_uint8(bool_arr):
     return (255*bool_arr).astype('uint8')
 
 
+def format_float(i):
+    """Formats string representation of float using "-" as decimal point."""
+    result = 0
+    if '-' in i:
+        val, dec = i.split('-')
+        result = int(val) + int(dec)/10.0**(len(dec))
+    else:
+        result = int(i)
+
+    return result
+
+
 def get_fps(vid_filepath, prefix):
     """
     Gets the frames per second from the filepath of the video.
@@ -72,3 +84,28 @@ def one_2_uint8(one_arr):
     assert (one_arr.dtype == 'float' and np.max(one_arr <= 1.0)), \
         'improc.one_2_uint8() only accepts floats arrays from 0 to 1.'
     return (255*one_arr).astype('uint8')
+
+
+def parse_vid_filepath(vid_filepath):
+    i_start = vid_filepath.rfind('\\')
+    vid_file = vid_filepath[i_start+1:]
+    # cuts out extension and splits by underscores
+    tokens = vid_file[:-4].split('_')
+    prefix = ''
+
+    for i, token in enumerate(tokens):
+        if token.isnumeric():
+            break
+        prefix.join(token)
+
+    params = {'prefix' : prefix,
+              'fps' : int(tokens[i]),
+              'exp_time' : int(tokens[i+1]),
+              'Qi' : format_float(tokens[i+2]),
+              'Qo' : int(tokens[i+3]),
+              'd' : int(tokens[i+4]),
+              'P' : int(tokens[i+5]),
+              'mag' : int(tokens[i+6]),
+              'num' : int(tokens[i+7])}
+
+    return params

@@ -29,6 +29,7 @@ import vid
 import fn
 import plotimproc as plot
 import geo
+import mask
 
 # imports custom classes (with reload clauses)
 import classes
@@ -325,7 +326,7 @@ def bubble_distance(bubble1, bubble2, axis, min_travel=0, upstream_penalty=1E5,
 def bubble_distance_v(bubble1, bubble2, axis, row_lo, row_hi, v_max, fps,
                       min_travel=0, upstream_penalty=1E5,
                     min_off_axis=4, off_axis_steepness=0.3,
-                    alpha=0.25, beta=4):
+                    alpha=1, beta=1):
     """
     Computes the distance between each pair of points in the two sets
     perpendicular to the axis. All inputs must be numpy arrays.
