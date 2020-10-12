@@ -488,11 +488,14 @@ def find_label(frame_labeled, rc, cc):
         Label of the image with centroid at (rc, cc). -1 indicates failure.
 
     """
+    # extracts number and rows and columns of frame
+    num_rows, num_cols = frame_labeled.shape
     # lists steps to take from centroid to find pixel in the labeled object
     steps = [(0,0), (0,1), (1,0), (1,1)]
     # searches around centroid for a labeled point
     for step in steps:
-        label = frame_labeled[int(rc)+step[0], int(cc)+step[1]]
+        label = frame_labeled[min(int(rc)+step[0], num_rows-1),
+                                min(int(cc)+step[1], num_cols-1)]
         if label != 0:
             return label
 
