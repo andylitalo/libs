@@ -36,10 +36,12 @@ class Bubble:
                          'flow_dir':flow_dir, 'pix_per_um':pix_per_um}
         # initializes storage of raw properties
         self.props_raw = {'frame':[], 'centroid':[], 'area':[],'major axis':[],
-                          'minor axis':[], 'orientation':[], 'on border':[]}
+                          'minor axis':[], 'orientation':[], 'bbox':[],
+                          'on border':[]}
         # initializes storage of processed properties
-        self.props_proc = {'average area':None, 'average speed':None,
-                           'average orientation':None,
+        self.props_proc = {'speed':[],
+                            'average area':None, 'average speed':None,
+                           'average orientation':None, 'aspect ratio':[],
                            'average aspect ratio':None, 'true centroids':[],
                            'inner stream':-1}
        # inner stream is 0 if bubble is likely in outer stream, 1 if
@@ -153,9 +155,17 @@ class Bubble:
 
     def proc_props(self):
         """Processes data to compute processed properties, mostly averages."""
+        n_frames = len(self.props_raw['frame'])
         # computes average area
         area = self.props_raw['area']
         self.props_proc['average area'] = np.mean(area)
+
+        # computes aspect ratio and average
+        self.props_proc['aspect ratio'] = [self.props_raw['major axis'][i] /  \
+                                            self.props_raw['minor axis'][i] \
+                                            for i in range(n_frames)]
+        self.props_proc['average aspect ratio'] = np.mean( \
+                                                self.props_proc['aspect ratio'])
 
         # computes average speed
         v_list = []
@@ -165,13 +175,18 @@ class Bubble:
         pix_per_um = self.metadata['pix_per_um']
         frame_list = self.props_raw['frame']
         centroid_list = self.props_raw['centroid']
-        for i in range(len(frame_list)-1):
+        for i in range(n_frames-1):
             diff = np.array(centroid_list[i+1]) - np.array(centroid_list[i])
             d = np.dot(diff, flow_dir)/pix_per_um*um_2_m # [m]
             t = dt*(frame_list[i+1]-frame_list[i]) # [s]
             v_list += [d/t] # [m/s]
 
-        self.props_proc['average speed'] = np.mean(v_list)
+        if len(v_list) > 0:
+            # assumes speed in first frame is same as the second frame
+            # to overcome loss of index in difference calculation of speed
+            v_list.insert(0, v_list[0])
+            self.props_proc['speed'] = v_list
+            self.props_proc['average speed'] = np.mean(v_list)
 
 
     ### HELPER FUNCTIONS ###
@@ -211,6 +226,7 @@ class Bubble:
             n = float('inf')
 
         return n
+
 
 ########################## FILEVIDEOSTREAM CLASS ##############################
 
