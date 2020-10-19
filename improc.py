@@ -29,17 +29,22 @@ import vid
 import fn
 import plotimproc as plot
 import geo
+import mask
 
 # imports custom classes (with reload clauses)
-import classes
-from classes import Bubble
-from classes import FileVideoStream
+from classes import Bubble, FileVideoStream
 
 # creates web driver for saving bokeh files as png
 from selenium.webdriver import Chrome, ChromeOptions
 options = ChromeOptions()
 options.add_argument('--headless')
-web_driver = Chrome(executable_path=r'C:\Users\andyl\anaconda3\chromedriver.exe', options=options)
+web_driver = Chrome(executable_path=r'C:\Users\andyl\anaconda3\chromedriver.exe', \
+                options=options)
+# NOTE: if you receive the error "SessionNotCreatedException: Message: session
+# not created: This version of ChromeDriver only supports Chrome version 84"
+# download the version of ChromeDriver that matches your current version of
+# Chrome, extract contents, and replace the chromedriver.exe file in the
+# anaconda3 folder with the newly downloaded version.
 
 # CONVERSION FACTORS
 um_per_m = 1E6
@@ -176,6 +181,10 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
         bubble = {}
         bubble['centroid'] = props.centroid
         bubble['area'] = props.area
+        bubble['orientation'] = props.orientation
+        bubble['major axis'] = props.major_axis_length
+        bubble['minor axis'] = props.minor_axis_length
+        bubble['bbox'] = props.bbox # (row_min, col_min, row_max, col_max)
         bubble['frame'] = f
         bubble['on border'] = is_on_border(props.bbox,
               frame_labeled, width_border)
@@ -325,7 +334,7 @@ def bubble_distance(bubble1, bubble2, axis, min_travel=0, upstream_penalty=1E5,
 def bubble_distance_v(bubble1, bubble2, axis, row_lo, row_hi, v_max, fps,
                       min_travel=0, upstream_penalty=1E5,
                     min_off_axis=4, off_axis_steepness=0.3,
-                    alpha=0.25, beta=4):
+                    alpha=1, beta=1):
     """
     Computes the distance between each pair of points in the two sets
     perpendicular to the axis. All inputs must be numpy arrays.
@@ -488,11 +497,14 @@ def find_label(frame_labeled, rc, cc):
         Label of the image with centroid at (rc, cc). -1 indicates failure.
 
     """
+    # extracts number and rows and columns of frame
+    num_rows, num_cols = frame_labeled.shape
     # lists steps to take from centroid to find pixel in the labeled object
     steps = [(0,0), (0,1), (1,0), (1,1)]
     # searches around centroid for a labeled point
     for step in steps:
-        label = frame_labeled[int(rc)+step[0], int(cc)+step[1]]
+        label = frame_labeled[min(int(rc)+step[0], num_rows-1),
+                                min(int(cc)+step[1], num_cols-1)]
         if label != 0:
             return label
 
@@ -979,7 +991,6 @@ def proc_frames(cap, alg, args, num_frames=100, report_freq=10):
     """
     Processes frames without using threading due to unpredictable outcomes.
     """
-    print('started proc_frames')
     # initializes result by applying algorithm to first frame
     ret, result = alg(cap, *args)
     # initializes counter at 3 because the next computation will be the 3rd
@@ -1302,7 +1313,12 @@ def test_track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
 
         # converts frame from one-scaled to 255-scaled
         frame_disp = fn.one_2_uint8(frame_colored)
+
+        # prints ID number of bubble to upper-right of centroid
         for ID in IDs:
+            # does not print ID number if in the outer stream
+            # if bubbles[ID].get_props('inner stream') == 0:
+            #     continue
             # shows number ID of bubble in image
             centroid = bubbles[ID].get_prop('centroid', f)
             x = int(centroid[1])
@@ -1310,7 +1326,10 @@ def test_track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
             # text of number ID is black if on the border of the image, white o/w
             white = (255, 255, 255)
             black = (0, 0, 0)
-            if bubbles[ID].get_prop('on border', f):
+            # colors label black if bubble is on the border or in outer stream
+            on_border = bubbles[ID].get_prop('on border', f)
+            outer_stream = bubbles[ID].get_props('inner stream') == 0
+            if on_border or outer_stream:
                 color = black
             else:
                 color = white

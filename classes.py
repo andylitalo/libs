@@ -36,11 +36,16 @@ class Bubble:
                          'flow_dir':flow_dir, 'pix_per_um':pix_per_um}
         # initializes storage of raw properties
         self.props_raw = {'frame':[], 'centroid':[], 'area':[],'major axis':[],
-                          'minor axis':[], 'orientation':[], 'on border':[]}
+                          'minor axis':[], 'orientation':[], 'bbox':[],
+                          'on border':[]}
         # initializes storage of processed properties
-        self.props_proc = {'average area':None, 'average speed':None,
-                           'average orientation':None,
-                           'average aspect ratio':None, 'true centroids':[]}
+        self.props_proc = {'speed':[],
+                            'average area':None, 'average speed':None,
+                           'average orientation':None, 'aspect ratio':[],
+                           'average aspect ratio':None, 'true centroids':[],
+                           'inner stream':-1}
+       # inner stream is 0 if bubble is likely in outer stream, 1 if
+       # likely in inner stream, and -1 if unknown or not evaluated yet
         # loads raw properties if provided
         if len(props_raw) > 0:
             self.add_props(props_raw)
@@ -88,6 +93,26 @@ class Bubble:
         for key in keys_not_provided:
             self.props_raw[key] += [None]
 
+    def classify(self, v_inner):
+        """
+        Classifies bubble as inner or outer stream based on velocity cutoff.
+        N.B.: If there is no inner stream (inner stream flow rate Q_i = 0),
+        then the velocity v_inner will be computed to be nan, in which case this
+        method will leave the classification as is.
+        """
+        # computes average speed [m/s] if not done so already
+        if self.props_proc['average speed'] == None:
+            self.proc_props()
+        # classifies bubble as inner stream if velocity is greater than cutoff
+        v = self.props_proc['average speed']
+        if v >= v_inner:
+            self.props_proc['inner stream'] = 1
+        # if velocity is positive but slower than cutoff, classify as outer stream
+        elif 0 < v and v < v_inner:
+            self.props_proc['inner stream'] = 0
+        # otherwise, default value of -1 is set to indicate unclear classification
+        else:
+            self.props_proc['inner stream'] = -1
 
     def predict_centroid(self, f):
         """Predicts next centroid based on step sizes between previous centroids."""
@@ -110,11 +135,13 @@ class Bubble:
         # if only 1 centroid provided, assume previous one was off screen in
         # direction opposite the flow direction
         if len(centroids) == 1:
+            centroid = centroids[0]
+            frame = frames[0]
             # estimates previous centroid assuming just offscreen
-            centroid_prev = self.offscreen_centroid(centroids[0])
+            centroid_prev = self.offscreen_centroid(centroid)
             # inserts previous centroid and frame
-            centroids.insert(0, centroid_prev)
-            frames.insert(0, frames[0]-1)
+            centroids = [centroid_prev, centroid]
+            frames = [frame-1, frame]
 
         # computes linear fit of previous centroids vs. frame
         # unzips rows and columns of centroids
@@ -128,9 +155,17 @@ class Bubble:
 
     def proc_props(self):
         """Processes data to compute processed properties, mostly averages."""
+        n_frames = len(self.props_raw['frame'])
         # computes average area
         area = self.props_raw['area']
         self.props_proc['average area'] = np.mean(area)
+
+        # computes aspect ratio and average
+        self.props_proc['aspect ratio'] = [self.props_raw['major axis'][i] /  \
+                                            self.props_raw['minor axis'][i] \
+                                            for i in range(n_frames)]
+        self.props_proc['average aspect ratio'] = np.mean( \
+                                                self.props_proc['aspect ratio'])
 
         # computes average speed
         v_list = []
@@ -140,12 +175,18 @@ class Bubble:
         pix_per_um = self.metadata['pix_per_um']
         frame_list = self.props_raw['frame']
         centroid_list = self.props_raw['centroid']
-        for i in range(len(frame_list)-1):
+        for i in range(n_frames-1):
             diff = np.array(centroid_list[i+1]) - np.array(centroid_list[i])
             d = np.dot(diff, flow_dir)/pix_per_um*um_2_m # [m]
-            v_list += [d/dt] # [m/s]
+            t = dt*(frame_list[i+1]-frame_list[i]) # [s]
+            v_list += [d/t] # [m/s]
 
-        self.props_proc['average speed'] = np.mean(v_list)
+        if len(v_list) > 0:
+            # assumes speed in first frame is same as the second frame
+            # to overcome loss of index in difference calculation of speed
+            v_list.insert(0, v_list[0])
+            self.props_proc['speed'] = v_list
+            self.props_proc['average speed'] = np.mean(v_list)
 
 
     ### HELPER FUNCTIONS ###
@@ -162,6 +203,7 @@ class Bubble:
         # computes steps to boundary in row and col directions
         n_r = self.steps_to_boundary(row, frame_dim[0], rev_dir[0])
         n_c = self.steps_to_boundary(col, frame_dim[1], rev_dir[1])
+
         # takes path requiring fewest steps
         if n_r <= n_c:
             row_off = row + n_r*rev_dir[0]
@@ -184,6 +226,7 @@ class Bubble:
             n = float('inf')
 
         return n
+
 
 ########################## FILEVIDEOSTREAM CLASS ##############################
 
