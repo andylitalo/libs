@@ -9,12 +9,10 @@ the Di Maio lab at the University of Naples by Andy Ylitalo.
 @date October 21, 2020
 """
 
-# adds path to general libraries
-import sys
-sys.path.append('../libs/')
-
+# imports standard libraries
 import numpy as np
 import scipy.interpolate
+import scipy.optimize
 import pandas as pd
 
 # CONVERSIONS
@@ -202,6 +200,35 @@ def calc_if_tension_prep(polyol_data_file, p_min=0, p_max=4E7,
 
     return np.concatenate((p_small, p_mid, p_big)), \
             np.concatenate((if_tension_small, if_tension_mid, if_tension_big))
+
+
+def calc_D_of_c(c, polyol_data_file, p0=4E6):
+    """
+    Diffusivity as a function of concentration of CO2 in the polyol.
+
+    Inverts calc_c_s (c_s = c_s(p)) to find the pressure at which the given
+    concentration is the saturation concentration and plugs that pressure into
+    calc_D (D = D(p)) to compute the diffusivity.
+
+    Parameters
+    ----------
+    c : float
+        concentration of CO2 in the polyol [kg CO2 / m^3 polyol-CO2]
+    polyol_data_file : string
+        name of file containing polyol data [.csv]
+
+    Returns
+    -------
+    D : float
+        diffusivity [m^2/s] of CO2 in polyol at given concentration of CO2
+    """
+    # inverts calc_c_s to get pressure [Pa] at which c is sat. conc.
+    soln = scipy.optimize.root(calc_c_s, p0, args=(polyol_data_file,))
+    p = soln.x
+    # computes diffusivity at resulting pressure
+    D = calc_D(p, polyol_data_file)
+
+    return D
 
 
 def interp_rho_co2(eos_co2_file):
