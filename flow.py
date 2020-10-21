@@ -12,6 +12,97 @@ flows).
 import numpy as np
 
 
+
+def sheath_eqns(eta_i, eta_o, L, p_atm, p_in, Q_i, Q_o, R_i, R_o, v):
+    """
+    Defines equations derived from Navier-Stokes equations in
+    Stokes flow for sheath flow down a cylindrical pipe. The
+    derivation is given in YlitaloA_candidacy_report.pdf.
+
+    Parameters
+    ----------
+    p_in : float
+        inlet pressure [Pa]
+    v : float
+        velocity of center stream [m/s]
+    R_i : float
+        radius of inner stream [m]
+    p_atm : float
+        outlet pressure, assumed to be atmospheric [Pa]
+    L : float
+        length of observation capillary [m]
+    eta_i : float
+        viscosity of inner stream of polyol-CO2 [Pa.s]
+    eta_o : float
+        viscosity of outer stream of pure polyol [Pa.s]
+    Q_i : float
+        inner stream flow rate, supplied by ISCO 100 DM [m^3/s]
+    Q_o : float
+        outer stream flow rate, supplied by ISCO 260 D [m^3/s]
+    R_o : float
+        radius of outer stream (half of inner diameter of observation capillary) [m]
+
+    Returns
+    -------
+    res : 3-tuple of floats
+        Residuals of the three flow equations (Poiseuille flow from Stokes
+        equation + 2 BCs: Q_i through the inner stream, and Q_o through the
+        outer stream BC)
+    """
+    # boundary condition that the outer stream has flow rate Q_o
+    res1 = Q_o - np.pi*(p_in-p_atm)*(R_o**2 - R_i**2)**2/(8*eta_o*L)
+    # boundary condition that the inner stream has flow rate Q_i
+    res2 = (p_in - p_atm)/L - (8*eta_i*Q_i)/ \
+                ( np.pi*R_i**2*(2*(R_o**2 - R_i**2)*eta_i/eta_o + R_i**2) )
+    # residual from Stokes flow (v = w_i(r = 0) for w_i z-velocity from Stokes)
+    res3 = v - (p_in - p_atm)/L*( (R_o**2 - R_i**2)/(4*eta_o) + \
+                R_i**2/(4*eta_i) )
+    res = (res1, res2, res3)
+
+    return res
+
+
+def sheath_eqns_input(variables, args):
+    """
+    Formats the input to flow_eqns for use in scipy.optimize.root, which
+    requires functions to have the format foo(vars, args).
+    Formatting is performed by merging variables and arguments according to
+    the ordering given as the last argument so that the arguments passed to
+    flow_eqns are ordered properly (alphabetically).
+
+    Parameters
+    ----------
+    variables : 3-tuple of floats
+        Quantities to solve for with scipy.optimize.root
+    args : 8-tuple of 7 floats followed by a list of 10 ints
+        The first 7 floats are the remaining quantities required for sheath_eqns,
+        which are provided by the user and held constant.
+        The list of 10 ints at the end gives the ordering of each variable in
+        alphabetical order so that when variables and args are merged, they are
+        in the proper order required for sheath_eqns.
+
+        Example:
+            variables = (p_in, v, R_i)
+            args = (p_atm, L, eta_i, eta_o, Q_i, Q_o, R_cap, ordering)
+            ordering = [5, 6, 4, 3, 0, 7, 8, 2, 9, 1]
+
+    Returns
+    -------
+    res : 3-tuple of floats
+        Residuals of the Stokes flow equation and boundary conditions
+        calculated in sheath_eqns.
+    """
+    # extracts the ordering of the variables/args
+    ordering = np.array(args[-1])
+    # merges variables and args (except for the ordering)
+    unordered_args = list(variables) + list(args[:-1])
+    # orders the merged variables and args in alphabetical order, which
+    # requires numpy arrays
+    ordered_args = list(np.array(unordered_args)[ordering])
+
+    return sheath_eqns(*ordered_args)
+
+
 def get_dp_R_i_v_max(eta_i, eta_o, L, Q_i, Q_o, R_o, SI=False):
     """
     Computes the pressure drop down the observation capillary, the radius of the inner
@@ -75,6 +166,27 @@ def get_dp_R_i_v_max(eta_i, eta_o, L, Q_i, Q_o, R_o, SI=False):
         v_max *= 1E3 # converts from m/s to mm/s
 
     return dp, R_i, v_max
+
+
+def get_flow_dir(pts):
+    """
+    Returns the flow direction (row, col) given 4 points defining the channel
+    boundary. The flow direction is assumed to be parallel to the more
+    horizontal of the boundaries of the mask.
+
+    Parameters
+    ----------
+    pts : list
+        List of (x,y) values of the vertices that define the boundaries of the
+        channel.
+
+    Returns
+    -------
+    flow_dir : 2-tuple of floats
+        Normalized vector (row, col) pointing in the direction of the flow
+        (assumed to be along the average of the horizontal boundaries)
+    """
+    # categorizes points
 
 
 def get_flow_rates_diff_mu(R_i, R_o, eta_i, eta_o, dp, L):
