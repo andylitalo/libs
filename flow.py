@@ -13,6 +13,41 @@ import numpy as np
 
 
 
+########################## FUNCTION DEFINTIONS #################################
+
+
+def calc_p(p_in, p_atm, v, t, L):
+    """
+    Calculates the pressure down the observation capillary
+    assuming a linear pressure drop based on the estimated
+    inlet (p_in) and outlet (p_atm) pressures.
+
+    Parameters:
+        p_in : float
+            inlet pressure, estimated using the flow.sheath_eqns [Pa]
+        p_atm : float
+            outlet pressure, estimated to be atmospheric pressure [Pa]
+        v : float
+            velocity of inner stream, estimated using flow.sheath_eqns [m/s]
+        t : float
+            time since entering the observation capillary [s]
+        L : float
+            length of observation capillary [m]
+
+    Returns:
+        p : float
+            pressure at current point along observation capillary [Pa]
+    """
+    return p_in + v*t/L*(p_atm-p_in)
+
+
+def calc_t_s(p_in, p_atm, p_s, v, L):
+    """
+    Calculates time at which pressure reaches saturation pressure.
+    """
+    return (p_in - p_s)/(p_in - p_atm)*L/v
+
+
 def sheath_eqns(eta_i, eta_o, L, p_atm, p_in, Q_i, Q_o, R_i, R_o, v):
     """
     Defines equations derived from Navier-Stokes equations in
