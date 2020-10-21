@@ -41,12 +41,12 @@ def create_polygon_mask(image,points):
     return mask, points
 
 
-def create_polygonal_mask_data(im,maskFile):
+def create_polygonal_mask_data(im, maskFile, msg='click vertices'):
     """
     create mask for an image and save as pickle file
     """
     # create mask
-    points = ui.define_outer_edge(im,'polygon',message='click vertices')
+    points = ui.define_outer_edge(im,'polygon',message=msg)
     mask, points = create_polygon_mask(im, points)
     # store mask data
     maskData = {}

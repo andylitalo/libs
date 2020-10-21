@@ -59,9 +59,9 @@ def get_fps(vid_filepath, prefix):
     i1 = filename.find(prefix) + len(prefix)
     i2 = filename[i1:].find('_')
     fps = int(filename[i1:i1+i2])
-    
+
     return fps
-    
+
 def is_cv3():
     """
     Checks if the version of OpenCV is cv3.
@@ -107,5 +107,53 @@ def parse_vid_filepath(vid_filepath):
               'P' : int(tokens[i+5]),
               'mag' : int(tokens[i+6]),
               'num' : int(tokens[i+7])}
+
+    return params
+
+
+def read_input_file(input_filepath, split_char='=', cmnt_char='#'):
+    """
+    Loads parameters from input file for tracking bubbles.
+
+    Assumes file format of
+    <param> <split_char> <value> <cmnt_char> <comment>
+
+    where <split_char> is the character defining the split between parameter
+    name and value and <cmnt_char> marks comments. Lines without this structure
+    are ignored.
+
+    Parameters
+    ----------
+    input_file : string
+        Path to file from which parameters are loaded.
+    split_char : char, optional
+        Character defining split between parameter name and value.
+        Default is '='.
+    cmnt_char : char, optional
+        Character marking an inline comment. Default is '#'.
+
+    Returns
+    -------
+    params : dictionary
+        Dictionary with parameter names as keys and parameter values as values.
+
+    """
+    # initializes dictionary to hold parameters
+    params = {}
+
+    # opens file
+    file_obj = open(input_filepath)
+
+    # reads in parameters from the lines of the file
+    for line in file_obj:
+        # removes comments at the end of the line
+        line = line.split(cmnt_char, 1)[0]
+        # removes spaces padding the line
+        line = line.strip()
+        key_value = line.split(split_char)
+        # checks that there is a key and value (2 items)
+        if len(key_value) == 2:
+            # loads parameter
+            params[key_value[0].strip()] = key_value[1].strip()
 
     return params

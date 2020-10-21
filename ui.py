@@ -21,26 +21,64 @@ import improc
 
 
 
+def click_flow(im, mask_filepath, check=False):
+    """
+    Same as click_flow_dir but requests two additional clicks along the other
+    inner wall of the capillary (or interface of the inner stream if both inner
+    walls are not visible) to define the mask for the flow.
+
+    If using an IDE like Spyder or Jupyter Notebook, user must enter the inline
+    command "%matplotlib qt" to display a clickable window for this function.
+
+    Parameters
+    ----------
+    im : (M x N x 3) or (M x N) numpy array of floats or uint8s
+        Image that will be shown for the user to click the flow direction
+    mask_filepath : string
+        Filepath to destination of desired mask file.
+
+    Returns
+    -------
+    flow_dir : 2-tuple of floats
+        Unit vector in (x,y) indicating direction of flow
+    mask_data : dictionary
+        Contains coordinates of individual points (x,y) defining the vertices of
+        the mask and the (M x N) array of the mask.
+    """
+    mask_data = get_polygonal_mask_data(im, mask_filepath, check=check,
+                            msg='Click 4 vertices defining flow region.' + \
+                            ' First 2 clicks should be along flow direction.')
+    pts = mask_data['points']
+    # computes coordinates of flow vector from first two clicks
+    dx = pts[1][0]-pts[0][0]
+    dy = pts[1][1]-pts[0][1]
+    # normalizes flow direction
+    d = np.sqrt(dx**2 + dy**2)
+    flow_dir = np.array([dx / d, dy / d])
+
+    return flow_dir, mask_data
+
+
 def click_flow_dir(im, msg='', return_origin=False):
     """
     User clicks along the inner wall of the capillary to indicate the flow
     direction in a vector (tuple). User must enter the inline command
     "%matplotlib qt" to get a pop-out plot for using this function.
-    
+
     Parameters
     ----------
     im : (M x N x 3) or (M x N) numpy array of floats or uint8s
         Image that will be shown for the user to click the flow direction
     return_origin : bool, optional
         If True, method also returns coordinates of first click.
-    
+
     Returns
     -------
     flow_dir : 2-tuple of floats
         Unit vector in (x,y) indicating direction of flow
     origin : 2-tuple of floats, optional
         Returned if return_origin is True. Gives (x,y) coords. of first click.
-        
+
     """
     # formats image for use in matplotlib's imshow
     im_p = improc.prep_for_mpl(im)
@@ -54,7 +92,7 @@ def click_flow_dir(im, msg='', return_origin=False):
     # normalizes flow direction
     d = np.sqrt(dx**2 + dy**2)
     flow_dir = np.array([dx / d, dy / d])
- 
+
     if return_origin:
         origin = xy_vals[0]
         return flow_dir, origin
@@ -63,7 +101,7 @@ def click_flow_dir(im, msg='', return_origin=False):
 
 def click_for_length(im, just_height=False, msg='', return_origin=False):
     """
-  
+
     """
     # formats image for use in matplotlib's imshow
     im_p = improc.prep_for_mpl(im)
@@ -82,7 +120,7 @@ def click_for_length(im, just_height=False, msg='', return_origin=False):
 
     return d
 
-    
+
 def click_for_next(ax, msg='Center-click for next image.'):
     """
     Allows code to continue only after user clicks.
@@ -93,11 +131,11 @@ def click_for_next(ax, msg='Center-click for next image.'):
         pp = get_pts(1)
         if len(pp) < 1:
             break
-        
-        
+
+
 def click_z_origin(im):
     """
-    Records user clicks that indicate the desired origin and z-axis in an 
+    Records user clicks that indicate the desired origin and z-axis in an
     image. These can be used to calculate the r-coordinate measured off the
     z-axis.
 
@@ -128,10 +166,10 @@ def click_z_origin(im):
     # rows of lower and upper inner walls
     row_lo = o_lo[1]
     row_hi = o_hi[1]
- 
+
     return z, row_lo, row_hi
 
-    
+
 def define_outer_edge(image,shapeType,message=''):
     """
     Displays image for user to outline the edge of a shape. Tracks clicks as
@@ -237,8 +275,8 @@ def define_outer_edge(image,shapeType,message=''):
         xyVals = [(np.min(X),np.min(Y)), (np.max(X),np.min(Y)),
                   (np.max(X),np.max(Y)), (np.min(X),np.max(Y))]
         return xyVals
-    
-    
+
+
 def get_rect_mask_data(im,maskFile,check=False):
     """
     Shows user masks overlayed on given image and asks through a dialog box
@@ -270,7 +308,7 @@ def get_rect_mask_data(im,maskFile,check=False):
     return maskData
 
 
-def get_polygonal_mask_data(im, mask_file, check=False):
+def get_polygonal_mask_data(im, mask_file, check=False, msg='click vertices'):
     """
     Shows user masks overlayed on given image and asks through a dialog box
     if they are acceptable. Returns True for 'yes' and False for 'no'.
@@ -280,7 +318,7 @@ def get_polygonal_mask_data(im, mask_file, check=False):
             mask_data = pkl.load(f)
     except:
         print('Mask file not found, please create it now.')
-        mask_data = mask.create_polygonal_mask_data(im, mask_file)
+        mask_data = mask.create_polygonal_mask_data(im, mask_file, msg=msg)
 
     while check:
         plt.figure('Evaluate accuracy of predrawn masks for your video')
@@ -295,7 +333,7 @@ def get_polygonal_mask_data(im, mask_file, check=False):
 
         else:
             print('Existing mask rejected, please create new one now.')
-            mask_data = mask.create_polygonal_mask_data(im, mask_file)
+            mask_data = mask.create_polygonal_mask_data(im, mask_file, msg=msg)
 
     return mask_data
 
@@ -340,16 +378,16 @@ def get_pts(num_pts=1,im=None):
     """
     Alter the built in ginput function in matplotlib.pyplot for custom use.
     This version switches the function of the left and right mouse buttons so
-    that the user can pan/zoom without adding points. 
+    that the user can pan/zoom without adding points.
     NOTE: the left mouse button still removes existing points.
-    
+
     Parameters:
         num_pts : int, optional
             number of points to get from user clicks.
         im : 2D or 3D array, optional
             If image is given, it will be shown and used for clicking.
             Otherwise, the current image will be used.
-            
+
     Returns:
         pts : list of tuples
             (x,y) coordinates of clicks on image
@@ -368,13 +406,13 @@ def get_pix_per_um(im, l_um):
     Given an image, the user clicks points defining a line segment of a known
     length. The length of that line segment is calculated and an approximate
     conversion of pixels to actual distance is obtained.
-    
+
     Parameters:
         im : 2D or 3D array
             Image with a known distance to be measured in pixels
         l_um : float
             Length of a known distance in the given image [um]
-    
+
     Returns:
         pix_per_um : float
             Number of pixels per um in the image.
