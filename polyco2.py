@@ -222,13 +222,50 @@ def calc_D_of_c(c, polyol_data_file, p0=4E6):
     D : float
         diffusivity [m^2/s] of CO2 in polyol at given concentration of CO2
     """
+    def f(p, c_s, polyol_data_file):
+        """Root yields saturation pressure for given saturation concentration"""
+        return calc_c_s(p, polyol_data_file) - c_s
+
     # inverts calc_c_s to get pressure [Pa] at which c is sat. conc.
-    soln = scipy.optimize.root(calc_c_s, p0, args=(polyol_data_file,))
+    args = (c, polyol_data_file,)
+    soln = scipy.optimize.root(f, p0, args=args)
     p = soln.x
     # computes diffusivity at resulting pressure
     D = calc_D(p, polyol_data_file)
 
     return D
+
+
+def calc_dDdc(c, dc, polyol_data_file):
+    """
+    Computes derivative of diffusivity of CO2 in polyol as a function of the
+    concentration of CO2.
+
+    Uses a forward difference formula to estimate dD/dc given the step size dc.
+
+    Parameters
+    ----------
+    c : float
+        concentration of CO2 [kg CO2 / m^3 polyol-CO2]
+    dc : float
+        step size in concentration of CO2 over which to evaluate the derivative
+        [kg CO2 / m^3 polyol-CO2]
+    polyol_data_file : string
+        name of file containing polyol data [.csv]
+
+    Returns
+    -------
+    dDdc : float
+        derivative of diffusivity of CO2 in polyol with respect to concentration
+        of CO2 [(m^2 / s) / (kg CO2 / m^3 polyol-CO2)]
+    """
+    # computes diffusivity at given concentration and one step size away [m^2/s]
+    D1 = calc_D_of_c(c, polyol_data_file)
+    D2 = calc_D_of_c(c + dc, polyol_data_file)
+    # computes dD/dc using forward difference formula [m^2/s / kg/m^3]
+    dDdc = (D2 - D1) / dc
+
+    return dDdc
 
 
 def interp_rho_co2(eos_co2_file):
