@@ -42,44 +42,11 @@ def calc_c_s(p, polyol_data_file):
     c_s : float
         concentration of CO2 in polyol-CO2 solution [kg/m^3] at the given pressure p
     """
-    p_arr, c_s_arr = calc_c_s_prep(polyol_data_file)
+    p_arr, c_s_arr = load_c_s_arr(polyol_data_file)
     # interpolates value to match the given pressure [kg CO2 / m^3 solution]
     c_s = np.interp(p, p_arr, c_s_arr)
 
     return c_s
-
-
-def calc_c_s_prep(polyol_data_file):
-    """
-    Estimates arrays of values of solubility for different pressures using
-    measurements of solubility and specific volume from G-ADSA.
-
-    If p is above the experimentally measured range, returns the maximum
-    measured saturation concentration to avoid errors (this is preferable since
-    we are just trying to make some rough estimates as a demonstration of this
-    method right now. More precise measurements in the future will require
-    a different approach).
-    """
-    # loads thermophysical property data from file
-    df = pd.read_csv(polyol_data_file)
-    p_arr = kPa_2_Pa*df['p actual [kPa]'].to_numpy(dtype=float) # measured pressures from experiment [Pa]
-    solub_arr = df['solubility [w/w]'].to_numpy(dtype=float) # measured solubility [w/w]
-    spec_vol_arr = df['specific volume (fit) [mL/g]'].to_numpy(dtype=float) # fitted specific volume [mL/g]
-    density_arr = gmL_2_kgm3/spec_vol_arr # density of polyol-CO2 [kg/m^3]
-    # computes saturation concentration of CO2 in polyol [kg CO2 / m^3 solution]
-    c_s_arr = solub_arr*density_arr
-
-    # removes data points with missing measurements
-    not_nan = [i for i in range(len(c_s_arr)) if not np.isnan(c_s_arr[i])]
-    p_arr = p_arr[not_nan]
-    c_s_arr = c_s_arr[not_nan]
-    # concatenate 0 to pressure and saturation concentration to cover low values of p
-    p_arr = np.concatenate((np.array([0]), p_arr))
-    c_s_arr = np.concatenate((np.array([0]), c_s_arr))
-    # orders saturation concentration in order of increasing pressure
-    inds = np.argsort(p_arr)
-
-    return p_arr[inds], c_s_arr[inds]
 
 
 def calc_D(p, polyol_data_file):
@@ -99,7 +66,7 @@ def calc_D(p, polyol_data_file):
     Parameters
     ----------
     p : float
-        pressure at which to estimate the saturation concentration [Pa]
+        pressure at which to estimate the diffusivity [m^2/s]
     polyol_data_file : string
         name of file containing polyol data [.csv]
 
@@ -108,12 +75,32 @@ def calc_D(p, polyol_data_file):
     D : float
         diffusivity of CO2 in polyol [m^2/s] at the given pressure p
     """
-    # loads thermophysical property data from file
-    df = pd.read_csv(polyol_data_file)
-    p_arr = kPa_2_Pa*df['p actual [kPa]'].to_numpy(dtype=float) # measured pressures from experiment [Pa]
-    D_sqrt_arr = cm2s_2_m2s*df['diffusivity (sqrt) [cm^2/s]'].to_numpy(dtype=float) # diff. measured by sqrt transient [m^2/s]
-    D_exp_arr = cm2s_2_m2s*df['diffusivity (exp) [cm^2/s]'].to_numpy(dtype=float) # diff. measured by exp plateau [m^2/s]
+    p_arr, D_sqrt_arr, D_exp_arr = load_D_arr(polyol_data_file)
 
+    return calc_D_raw(p, p_arr, D_sqrt_arr, D_exp_arr)
+
+
+def calc_D_raw(p, p_arr, D_sqrt_arr, D_exp_arr):
+    """
+    Calculates diffusivity as in calc_D as a function of pressure, but using
+    raw arrays for interpolation.
+
+    Parameters
+    ----------
+    p : float
+        pressure at which to estimate the diffusivity [m^2/s]
+    p_arr : N x 1 numpy array of floats
+        array of pressures for interpolation [Pa]
+    D_sqrt_arr : N x 1 numpy array of floats
+        array of diffusivities [m^2/s] estimated with squareroot method
+    D_exp_arr : N x 1 numpy array of floats
+        array of diffusivities [m^2/s] estimated with exponential method
+
+    Returns
+    -------
+    D : float
+        diffusivity of CO2 in polyol [m^2/s] at the given pressure p
+    """
     # averages sqrt and exponential estimates of diffusivity [m^2/s]
     D_arr = (D_sqrt_arr + D_exp_arr)/2
     # removes data points with missing measurements
@@ -162,46 +149,6 @@ def calc_if_tension(p, if_interp_arrs, R, d_tolman=0):
     return if_tension
 
 
-def calc_if_tension_prep(polyol_data_file, p_min=0, p_max=4E7,
-                         if_tension_model='lin'):
-    """
-    Estimates the interfacial tension between the CO2-rich and polyol-rich
-    phases under equilibrium coexistence between CO2 and polyol at the given
-    pressure by interpolating available measurements using G-ADSA. Provides
-    arrays for interpolation using calc_if_tension().
-
-    """
-    # loads thermophysical property data from file
-    df = pd.read_csv(polyol_data_file)
-    p_arr = 1000*df['p actual [kPa]'].to_numpy(dtype=float) # measured pressures from experiment [Pa]
-    if_tension_arr = 1E-3*df['if tension [mN/m]'].to_numpy(dtype=float) # measured interfacial tension [N/m]
-
-    # removes data points with missing measurements
-    not_nan = [i for i in range(len(if_tension_arr)) if not np.isnan(if_tension_arr[i])]
-    p_arr = p_arr[not_nan]
-    if_tension_arr = if_tension_arr[not_nan]
-    # orders saturation concentration in order of increasing pressure
-    inds = np.argsort(p_arr)
-    p_mid = p_arr[inds]
-    if_tension_mid = if_tension_arr[inds]
-    # extrapolates pressure beyond range of data
-    a, b = np.polyfit(p_arr, if_tension_arr, 1)
-    p_small = np.linspace(p_min, p_mid[0], 10)
-    if_tension_small = a*p_small + b
-    p_big = np.linspace(p_mid[-1], p_max, 100)
-    if if_tension_model == 'lin':
-        if_tension_big = a*p_big + b
-        # change negative values to 0
-        if_tension_big *= np.heaviside(if_tension_big, 1)
-    elif if_tension_model == 'ceil':
-        if_tension_big = np.min(if_tension_mid)*np.ones([len(p_big)])
-    else:
-        print('calc_if_tension_prep does not recognize the given if_tension_model.')
-
-    return np.concatenate((p_small, p_mid, p_big)), \
-            np.concatenate((if_tension_small, if_tension_mid, if_tension_big))
-
-
 def calc_D_of_c(c, polyol_data_file, p0=4E6):
     """
     Diffusivity as a function of concentration of CO2 in the polyol.
@@ -229,9 +176,24 @@ def calc_D_of_c(c, polyol_data_file, p0=4E6):
     # inverts calc_c_s to get pressure [Pa] at which c is sat. conc.
     args = (c, polyol_data_file,)
     soln = scipy.optimize.root(f, p0, args=args)
-    p = soln.x
+    p = soln.x[0] # extracts solution from array
     # computes diffusivity at resulting pressure
     D = calc_D(p, polyol_data_file)
+
+    return D
+
+
+def calc_D_of_c_raw(c, c_s_arr, p_s_arr, p_arr, D_exp_arr, D_sqrt_arr):
+    """
+    Calculates D(c) as in calc_D_of_c but directly interpolates from arrays.
+    """
+    # pushes c in bounds if not already
+    c = min(c, np.max(c_s_arr))
+    c = max(c, np.min(c_s_arr))
+    # interpolates saturation pressure with c as saturation concentration [Pa]
+    p = np.interp(c, c_s_arr, p_s_arr)
+    # estimates diffusivity [m^2/s]
+    D = calc_D_raw(p, p_arr, D_exp_arr, D_sqrt_arr)
 
     return D
 
@@ -262,6 +224,18 @@ def calc_dDdc(c, dc, polyol_data_file):
     # computes diffusivity at given concentration and one step size away [m^2/s]
     D1 = calc_D_of_c(c, polyol_data_file)
     D2 = calc_D_of_c(c + dc, polyol_data_file)
+    # computes dD/dc using forward difference formula [m^2/s / kg/m^3]
+    dDdc = (D2 - D1) / dc
+
+    return dDdc
+
+
+def calc_dDdc_raw(c, dc, c_s_arr, p_s_arr, p_arr, D_sqrt_arr, D_exp_arr):
+    """
+    """
+    # computes diffusivity at given concentration and one step size away [m^2/s]
+    D1 = calc_D_of_c_raw(c, c_s_arr, p_s_arr, p_arr, D_sqrt_arr, D_exp_arr)
+    D2 = calc_D_of_c_raw(c + dc, c_s_arr, p_s_arr, p_arr, D_sqrt_arr, D_exp_arr)
     # computes dD/dc using forward difference formula [m^2/s / kg/m^3]
     dDdc = (D2 - D1) / dc
 
@@ -299,3 +273,87 @@ def interp_rho_co2(eos_co2_file):
                                        fill_value=(rho_min, rho_max))
 
     return f_rho_co2
+
+
+def load_c_s_arr(polyol_data_file):
+    """
+    Estimates arrays of values of solubility for different pressures using
+    measurements of solubility and specific volume from G-ADSA.
+
+    If p is above the experimentally measured range, returns the maximum
+    measured saturation concentration to avoid errors (this is preferable since
+    we are just trying to make some rough estimates as a demonstration of this
+    method right now. More precise measurements in the future will require
+    a different approach).
+    """
+    # loads thermophysical property data from file
+    df = pd.read_csv(polyol_data_file)
+    p_arr = kPa_2_Pa*df['p actual [kPa]'].to_numpy(dtype=float) # measured pressures from experiment [Pa]
+    solub_arr = df['solubility [w/w]'].to_numpy(dtype=float) # measured solubility [w/w]
+    spec_vol_arr = df['specific volume (fit) [mL/g]'].to_numpy(dtype=float) # fitted specific volume [mL/g]
+    density_arr = gmL_2_kgm3/spec_vol_arr # density of polyol-CO2 [kg/m^3]
+    # computes saturation concentration of CO2 in polyol [kg CO2 / m^3 solution]
+    c_s_arr = solub_arr*density_arr
+
+    # removes data points with missing measurements
+    not_nan = [i for i in range(len(c_s_arr)) if not np.isnan(c_s_arr[i])]
+    p_arr = p_arr[not_nan]
+    c_s_arr = c_s_arr[not_nan]
+    # concatenate 0 to pressure and saturation concentration to cover low values of p
+    p_arr = np.concatenate((np.array([0]), p_arr))
+    c_s_arr = np.concatenate((np.array([0]), c_s_arr))
+    # orders saturation concentration in order of increasing pressure
+    inds = np.argsort(p_arr)
+
+    return p_arr[inds], c_s_arr[inds]
+
+
+def load_D_arr(polyol_data_file):
+    """Loads arrays required for compute D(p)."""
+    # loads thermophysical property data from file
+    df = pd.read_csv(polyol_data_file) # takes up 2/3 of computing time***
+    p_arr = kPa_2_Pa*df['p actual [kPa]'].to_numpy(dtype=float) # measured pressures from experiment [Pa]
+    D_sqrt_arr = cm2s_2_m2s*df['diffusivity (sqrt) [cm^2/s]'].to_numpy(dtype=float) # diff. measured by sqrt transient [m^2/s]
+    D_exp_arr = cm2s_2_m2s*df['diffusivity (exp) [cm^2/s]'].to_numpy(dtype=float) # diff. measured by exp plateau [m^2/s]
+
+    return p_arr, D_sqrt_arr, D_exp_arr
+
+
+def load_if_tension_arr(polyol_data_file, p_min=0, p_max=4E7,
+                         if_tension_model='lin'):
+    """
+    Estimates the interfacial tension between the CO2-rich and polyol-rich
+    phases under equilibrium coexistence between CO2 and polyol at the given
+    pressure by interpolating available measurements using G-ADSA. Provides
+    arrays for interpolation using calc_if_tension().
+
+    """
+    # loads thermophysical property data from file
+    df = pd.read_csv(polyol_data_file)
+    p_arr = 1000*df['p actual [kPa]'].to_numpy(dtype=float) # measured pressures from experiment [Pa]
+    if_tension_arr = 1E-3*df['if tension [mN/m]'].to_numpy(dtype=float) # measured interfacial tension [N/m]
+
+    # removes data points with missing measurements
+    not_nan = [i for i in range(len(if_tension_arr)) if not np.isnan(if_tension_arr[i])]
+    p_arr = p_arr[not_nan]
+    if_tension_arr = if_tension_arr[not_nan]
+    # orders saturation concentration in order of increasing pressure
+    inds = np.argsort(p_arr)
+    p_mid = p_arr[inds]
+    if_tension_mid = if_tension_arr[inds]
+    # extrapolates pressure beyond range of data
+    a, b = np.polyfit(p_arr, if_tension_arr, 1)
+    p_small = np.linspace(p_min, p_mid[0], 10)
+    if_tension_small = a*p_small + b
+    p_big = np.linspace(p_mid[-1], p_max, 100)
+    if if_tension_model == 'lin':
+        if_tension_big = a*p_big + b
+        # change negative values to 0
+        if_tension_big *= np.heaviside(if_tension_big, 1)
+    elif if_tension_model == 'ceil':
+        if_tension_big = np.min(if_tension_mid)*np.ones([len(p_big)])
+    else:
+        print('load_if_tension_arr does not recognize the given if_tension_model.')
+
+    return np.concatenate((p_small, p_mid, p_big)), \
+            np.concatenate((if_tension_small, if_tension_mid, if_tension_big))
