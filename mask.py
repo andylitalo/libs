@@ -41,7 +41,7 @@ def create_polygon_mask(image,points):
     return mask, points
 
 
-def create_polygonal_mask_data(im, maskFile, msg='click vertices'):
+def create_polygonal_mask_data(im, maskFile, save=True, msg='click vertices'):
     """
     create mask for an image and save as pickle file
     """
@@ -52,9 +52,11 @@ def create_polygonal_mask_data(im, maskFile, msg='click vertices'):
     maskData = {}
     maskData['mask'] = mask
     maskData['points'] = points
+
     # save new mask
-    with open(maskFile,'wb') as f:
-        pkl.dump(maskData, f)
+    if save:
+        with open(maskFile,'wb') as f:
+            pkl.dump(maskData, f)
 
     return maskData
 

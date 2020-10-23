@@ -21,7 +21,7 @@ import improc
 
 
 
-def click_flow(im, mask_filepath, check=False):
+def click_flow(im, mask_filepath, region='outer stream', save=True, check=False):
     """
     Same as click_flow_dir but requests two additional clicks along the other
     inner wall of the capillary (or interface of the inner stream if both inner
@@ -36,6 +36,14 @@ def click_flow(im, mask_filepath, check=False):
         Image that will be shown for the user to click the flow direction
     mask_filepath : string
         Filepath to destination of desired mask file.
+    region : string, optional
+        Region of image that the user should click. Default 'outer stream'.
+    save : bool, optional
+        If True, will save mask data at mask_filepath. Default True.
+    check : bool, optional
+        If True and a file exists under mask_filepath, asks user to confirm
+        quality of existing mask before proceeding. Otherwise, existing mask is
+        always used. Default False.
 
     Returns
     -------
@@ -45,9 +53,9 @@ def click_flow(im, mask_filepath, check=False):
         Contains coordinates of individual points (x,y) defining the vertices of
         the mask and the (M x N) array of the mask.
     """
-    mask_data = get_polygonal_mask_data(im, mask_filepath, check=check,
-                            msg='Click 4 vertices defining flow region.' + \
-                            ' First 2 clicks should be along flow direction.')
+    mask_data = get_polygonal_mask_data(im, mask_filepath, check=check, save=save,
+                            msg='Click 4 vertices defining {0:s}.' + \
+                    ' First 2 clicks should be along flow direction.', region)
     pts = mask_data['points']
     # computes coordinates of flow vector from first two clicks
     dx = pts[1][0]-pts[0][0]
@@ -133,14 +141,43 @@ def click_for_next(ax, msg='Center-click for next image.'):
             break
 
 
-def click_sheath_flow(vid_filepath, mask_data_filepath, check=False):
+def click_sheath_flow(im, mask_filepath, check=False):
     """
     User clicks mask for flow and mask for inner stream. The method then uses
     these to determine the flow axis and parameters for estimating velocity
     field.
 
-Parameters ***
+    Parameters
+    ----------
+    im : (M x N x 3) or (M x N) numpy array of floats or uint8s
+        Image that will be shown for the user to click the flow direction
+    mask_filepath : string
+        Filepath to destination of desired mask file.
+    check : bool
+        If True and a file exists under mask_filepath, asks user to confirm
+        quality of existing mask before proceeding. Otherwise, existing mask is
+        always used. Default False.
+
+    Returns
+    -------
+    flow_dir : 2-tuple of floats
+        Unit vector (row, col) of direction of flow
+    mask_data : dictionary
+        Contains data (mask and vertices) for full mask and inner stream mask
     """
+    # asks user to click outer stream; ignores flow direction in case inner
+    # walls of capillary are not visible in the image
+    _, outer_mask_data = click_flow(im, mask_filepath, save=False, check=check)
+    # asks user to click inner stream
+    flow_dir, inner_mask_data = click_flow(im, mask_filepath,
+                                region='inner stream', save=False, check=check)
+    # saves inner and outer stream mask data
+    mask_data = {'inner' : inner_mask_data, 'outer' : outer_mask_data}
+    with open(mask_filepath, 'wb') as f:
+        pkl.dump(mask_data, f)
+
+    return flow_dir, mask_data
+
 
 def click_z_origin(im):
     """
@@ -317,7 +354,8 @@ def get_rect_mask_data(im,maskFile,check=False):
     return maskData
 
 
-def get_polygonal_mask_data(im, mask_file, check=False, msg='click vertices'):
+def get_polygonal_mask_data(im, mask_file, check=False, save=True,
+                                                        msg='click vertices'):
     """
     Shows user masks overlayed on given image and asks through a dialog box
     if they are acceptable. Returns True for 'yes' and False for 'no'.
@@ -327,7 +365,8 @@ def get_polygonal_mask_data(im, mask_file, check=False, msg='click vertices'):
             mask_data = pkl.load(f)
     except:
         print('Mask file not found, please create it now.')
-        mask_data = mask.create_polygonal_mask_data(im, mask_file, msg=msg)
+        mask_data = mask.create_polygonal_mask_data(im, mask_file, save=save,
+                                                                    msg=msg)
 
     while check:
         plt.figure('Evaluate accuracy of predrawn masks for your video')
