@@ -117,7 +117,7 @@ def average_rgb(im):
 
 def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
                    flow_dir, fps, pix_per_um, width_border, row_lo, row_hi,
-                   v_max, area_thresh=0):
+                   v_max, min_size_reg=0):
     """
     Assigns Bubble objects with unique IDs to the labeled objects on the video
     frame provided. This method is used on a single frame in the context of
@@ -159,7 +159,7 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
         Row of upper inner wall
     v_max : float
         Maximum velocity expected due to Poiseuille flow [pix/s]
-    area_thresh : int
+    min_size_reg : int
         Bubbles must have a greater area than this threshold to be registered.
 
     Returns
@@ -196,7 +196,7 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
     if len(bubbles_prev) == 0:
         for i in range(len(bubbles_curr)):
             # only adds large bubbles
-            if bubbles_curr[i]['area'] >= area_thresh:
+            if bubbles_curr[i]['area'] >= min_size_reg:
                 bubbles_prev[ID_curr] = bubbles_curr[i]
                 ID_curr += 1
 
@@ -290,7 +290,7 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
         # registers each unregistered new input centroid as a bubble seen
         for col in cols_unused:
             # adds only bubbles above threshold
-            if bubbles_curr[col]['area'] >= area_thresh:
+            if bubbles_curr[col]['area'] >= min_size_reg:
                 bubbles_prev[ID_curr] = bubbles_curr[col]
                 ID_curr += 1
 
@@ -1211,7 +1211,7 @@ def thresh_im(im, thresh=-1, c=5):
 
 def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
                  pix_per_um, flow_dir, row_lo, row_hi,
-                   v_max, prefix, area_thresh=0, ret_IDs=False,
+                   v_max, prefix, min_size_reg=0, ret_IDs=False,
                  report_freq=10, width_border=10, start_frame=0,
                  end_frame=-1, skip=1):
     """
@@ -1245,7 +1245,7 @@ def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
         ID_curr = assign_bubbles(frame_labeled, f, bubbles_prev,
                                  bubbles_archive, ID_curr, flow_dir, fps,
                                  pix_per_um, width_border, row_lo, row_hi,
-                                 v_max, area_thresh=area_thresh)
+                                 v_max, min_size_reg=min_size_reg)
 
         if (f % report_freq*skip) == 0:
             print('Processed frame {0:d} of range {1:d}:{2:d}:{3:d}.' \
