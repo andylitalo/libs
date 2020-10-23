@@ -16,7 +16,7 @@ import time
 import fn
 import improc
 import mask
-import plotimproc as plot
+import plot.improc as plot
 
 
 
@@ -25,16 +25,16 @@ def count_frames(path, override=False):
     This method comes from https://www.pyimagesearch.com/2017/01/09/
     count-the-total-number-of-frames-in-a-video-with-opencv-and-python/
     written by Adrian Rosebrock.
-    The method counts the number of frames in a video using cv2 and 
+    The method counts the number of frames in a video using cv2 and
     is robust to the errors that may be encountered based on what
     dependencies the user has installed.
-    
-    Parameters: 
+
+    Parameters:
         path : string
             Direction to file of video whose frames we want to count
         override : bool (default = False)
             Uses slower, manual counting if set to True
-            
+
     Returns:
     n_frames : int
         Number of frames in the video. -1 is passed if fails completely.
@@ -51,10 +51,10 @@ def count_frames(path, override=False):
                 n_frames = int(video.get(cv2.cv.CV_CAP_PROP_FRAME_COUNT))
         except:
             n_frames = count_frames_manual(video)
-            
+
     # release the video file pointer
     video.release()
-    
+
     return n_frames
 
 
@@ -63,7 +63,7 @@ def count_frames_manual(video):
     This method comes from https://www.pyimagesearch.com/2017/01/09/
     count-the-total-number-of-frames-in-a-video-with-opencv-and-python/
     written by Adrian Rosebrock.
-    Counts frames in video by looping through each frame. 
+    Counts frames in video by looping through each frame.
     Much slower than reading the codec, but also more reliable.
     """
     # initialize the total number of frames read
@@ -92,11 +92,11 @@ def extract_frame(Vid,nFrame,hMatrix=None,maskData=None,filterFrame=False,
         print('Frame not read')
     else:
         frame = frame[:,:,0]
-        
+
     # Scale the size if requested
     if scale != 1:
         frame = improc.scale_image(frame,scale)
-        
+
     # Perform image filtering if requested
     if filterFrame:
         if removeBanner:
@@ -106,19 +106,19 @@ def extract_frame(Vid,nFrame,hMatrix=None,maskData=None,filterFrame=False,
             frame[ind:,:] = temp
         else:
             frame = scipy.ndimage.gaussian_filter(frame, 0.03)
-        
+
     # Apply image transformation using homography matrix if passed
     if hMatrix is not None:
         temp = frame.shape
         frame = cv2.warpPerspective(frame,hMatrix,(temp[1],temp[0]))
-        
+
     # Apply mask if needed
     if maskData is not None:
         frame = mask.mask_image(frame,maskData['mask'])
         if center:
             frame = improc.rotate_image(frame,angle,center=maskData['diskCenter'],
                                      size=frame.shape)
-        
+
     return frame
 
 
@@ -129,7 +129,7 @@ def load_frame(vid_filepath, num, vert_flip=True, bokeh=True):
     frame = read_frame(cap, num)
     if bokeh:
         frame = plot.bokehfy(frame)
-    
+
     return frame, cap
 
 
@@ -137,11 +137,11 @@ def read_frame(cap, num):
     """Reads frame given the video capture object."""
     cap.set(cv2.CAP_PROP_POS_FRAMES, num)
     grabbed, frame = cap.read()
-    
-    return frame 
+
+    return frame
 
 
-def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=True, 
+def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=True,
                fig_size_red=0.5, brightness=1.0, show_fig=True):
     """
     vert_flip:  # code for flipping vertically with cv2.flip()
@@ -157,7 +157,7 @@ def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=True,
     return p, im, cap
 
 
-def view_video(vid_filepath, start_frame, pix_per_um, time_sleep=0.3, 
+def view_video(vid_filepath, start_frame, pix_per_um, time_sleep=0.3,
                brightness=1.0, vert_flip=True, show_frame_num=False,
                fig_size_red=0.5):
     """
@@ -165,7 +165,7 @@ def view_video(vid_filepath, start_frame, pix_per_um, time_sleep=0.3,
     Functions and setup were adapted from:
     https://stackoverflow.com/questions/27882255/is-it-possible-to-display-an-opencv-video-inside-the-ipython-jupyter-notebook
     """
-    p, im, cap = show_frame(vid_filepath, start_frame, pix_per_um, 
+    p, im, cap = show_frame(vid_filepath, start_frame, pix_per_um,
                             brightness=brightness, fig_size_red=fig_size_red)
     if show_frame_num:
         f = start_frame
@@ -176,8 +176,8 @@ def view_video(vid_filepath, start_frame, pix_per_um, time_sleep=0.3,
             f += 1
             white = (255, 255, 255)
             h = frame.shape[0]
-            frame = cv2.putText(img=frame, text=str(f), org=(10, h-10), 
-                                    fontFace=0, fontScale=2, color=white, 
+            frame = cv2.putText(img=frame, text=str(f), org=(10, h-10),
+                                    fontFace=0, fontScale=2, color=white,
                                     thickness=3)
         # formats frame for viewing
         frame = improc.adjust_brightness(plot.bokehfy(
@@ -187,4 +187,3 @@ def view_video(vid_filepath, start_frame, pix_per_um, time_sleep=0.3,
         push_notebook()
         # waits before showing the next frame
         time.sleep(time_sleep)
-    

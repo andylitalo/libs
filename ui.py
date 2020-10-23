@@ -133,6 +133,15 @@ def click_for_next(ax, msg='Center-click for next image.'):
             break
 
 
+def click_sheath_flow(vid_filepath, mask_data_filepath, check=False):
+    """
+    User clicks mask for flow and mask for inner stream. The method then uses
+    these to determine the flow axis and parameters for estimating velocity
+    field.
+
+Parameters ***
+    """
+
 def click_z_origin(im):
     """
     Records user clicks that indicate the desired origin and z-axis in an

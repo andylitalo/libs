@@ -27,7 +27,7 @@ import scipy.ndimage
 # imports custom libraries
 import vid
 import fn
-import plotimproc as plot
+import plot.improc as plot
 import geo
 import mask
 
