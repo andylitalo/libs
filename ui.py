@@ -13,7 +13,7 @@ import cv2
 from tkinter import messagebox
 
 # imports custom libraries
-import plot
+import plot.genl as pltg
 import vid
 import geo
 import mask
@@ -54,8 +54,8 @@ def click_flow(im, mask_filepath, region='outer stream', save=True, check=False)
         the mask and the (M x N) array of the mask.
     """
     mask_data = get_polygonal_mask_data(im, mask_filepath, check=check, save=save,
-                            msg='Click 4 vertices defining {0:s}.' + \
-                    ' First 2 clicks should be along flow direction.', region)
+                    msg='Click 4 vertices defining {0:s}.'.format(region) + \
+                    ' First 2 clicks should be along flow direction.')
     pts = mask_data['points']
     # computes coordinates of flow vector from first two clicks
     dx = pts[1][0]-pts[0][0]
@@ -107,6 +107,7 @@ def click_flow_dir(im, msg='', return_origin=False):
     else:
         return flow_dir
 
+
 def click_for_length(im, just_height=False, msg='', return_origin=False):
     """
 
@@ -153,7 +154,7 @@ def click_sheath_flow(im, mask_filepath, check=False):
         Image that will be shown for the user to click the flow direction
     mask_filepath : string
         Filepath to destination of desired mask file.
-    check : bool
+    check : bool, optional
         If True and a file exists under mask_filepath, asks user to confirm
         quality of existing mask before proceeding. Otherwise, existing mask is
         always used. Default False.
@@ -161,18 +162,24 @@ def click_sheath_flow(im, mask_filepath, check=False):
     Returns
     -------
     flow_dir : 2-tuple of floats
-        Unit vector (row, col) of direction of flow
+        Unit vector of direction of flow. (row, col) if rc is True, o/w (x,y).
     mask_data : dictionary
         Contains data (mask and vertices) for full mask and inner stream mask
     """
     # asks user to click outer stream; ignores flow direction in case inner
     # walls of capillary are not visible in the image
-    _, outer_mask_data = click_flow(im, mask_filepath, save=False, check=check)
+    _, mask_data = click_flow(im, mask_filepath, save=False, check=check)
     # asks user to click inner stream
-    flow_dir, inner_mask_data = click_flow(im, mask_filepath,
+    flow_dir_xy, inner_mask_data = click_flow(im, mask_filepath,
                                 region='inner stream', save=False, check=check)
-    # saves inner and outer stream mask data
-    mask_data = {'inner' : inner_mask_data, 'outer' : outer_mask_data}
+    # flips flow direction to be row col
+    flow_dir = flow_dir_xy[::-1]
+    # extracts vertices of inner stream for use in defining inner stream width
+    pts_inner = inner_mask_data['points']
+    # stores inner stream properties in mask data dictionary
+    mask_data['flow dir'] = flow_dir
+    mask_data['pts inner'] = pts_inner
+    # saves mask data
     with open(mask_filepath, 'wb') as f:
         pkl.dump(mask_data, f)
 
@@ -268,7 +275,7 @@ def define_outer_edge(image,shapeType,message=''):
             pp = pp[0]
         # Reset the plot
         plt.cla()
-        plot.no_ticks(image)
+        pltg.no_ticks(image)
         plt.title(message)
         plt.axis(lims)
         # Add the new point to the list of points and plot them

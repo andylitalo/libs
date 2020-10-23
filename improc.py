@@ -340,7 +340,7 @@ def bubble_distance_v(bubble1, bubble2, axis, row_lo, row_hi, v_max, fps,
     perpendicular to the axis. All inputs must be numpy arrays.
     Wiggle room gives forgiveness for a few pixels in case the bubble is
     stagnant but processing causes the centroid to move a little.
-    # TODO incorporate velocity profile into objective
+    # TODO incorporate velocity profile more accurately into objective
     """
     # computes distance between the centroids of the two bubbles [row, col]
     c1 = np.array(bubble1['centroid'])

@@ -89,6 +89,31 @@ def create_rect_mask_data(im,maskFile):
     return maskData
 
 
+def get_bbox(mask_data):
+    """
+    Returns the bounding box (max and min rows and columns) of a mask.
+
+    Parameters
+    ----------
+    mask_data : dictionary
+        Must at minimum contain entry 'points' containing 2-tuples of ints
+        defining the (x,y) coordinates of the points along the boundary of the
+        mask.
+
+    Returns
+    -------
+    bbox : 4-tuple of ints
+        (row_min, col_min, row_max, col_max)
+    """
+    # collects list of all rows and columns of points along boundary of mask
+    rows = [pt[1] for pt in mask_data['points']]
+    cols = [pt[0] for pt in mask_data['points']]
+    # computes bounding box
+    bbox =  (np.min(rows), np.min(cols), np.max(rows), np.max(cols))
+
+    return bbox
+    
+
 def get_mask(X,Y,imageShape):
     """
     Converts arrays of x- and y-values into a mask. The x and y values must be
