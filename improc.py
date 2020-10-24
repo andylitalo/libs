@@ -574,11 +574,11 @@ def get_angle_correction(im_labeled):
     return angle_correction
 
 
-def get_frame_IDs(bubbles_archive, start_frame, end_frame, skip):
+def get_frame_IDs(bubbles_archive, start, end, skip):
     """Returns list of IDs of bubbles in each frame"""
     # initializes dictionary of IDs for each frame
     frame_IDs = {}
-    for f in range(start_frame, end_frame, skip):
+    for f in range(start, end, skip):
         frame_IDs[f] = []
     # loads IDs of bubbles found in each frame
     for ID in bubbles_archive.keys():
@@ -1211,9 +1211,9 @@ def thresh_im(im, thresh=-1, c=5):
 
 def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
                  pix_per_um, flow_dir, row_lo, row_hi,
-                   v_max, prefix, min_size_reg=0, ret_IDs=False,
-                 report_freq=10, width_border=10, start_frame=0,
-                 end_frame=-1, skip=1):
+                   v_max, min_size_reg=0, ret_IDs=False,
+                 report_freq=10, width_border=10, start=0,
+                 end=-1, skip=1):
     """
     flow_dir should be in (row, col) format.
     v_max [=] [m/s]
@@ -1226,13 +1226,13 @@ def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
     # initializes counter of current bubble label (0-indexed)
     ID_curr = 0
     # chooses end frame to be last frame if given as -1
-    if end_frame == -1:
-        end_frame = vid.count_frames(vid_filepath)
+    if end == -1:
+        end = vid.count_frames(vid_filepath)
 
     # extracts fps from video filepath
-    fps = fn.get_fps(vid_filepath, prefix)
+    fps = fn.parse_vid_filepath(vid_filepath)['fps']
     # loops through frames of video
-    for f in range(start_frame, end_frame, skip):
+    for f in range(start, end, skip):
         # loads frame from video file
         frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
         # extracts value channel of frame--including selem ruins segmentation
@@ -1249,11 +1249,11 @@ def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
 
         if (f % report_freq*skip) == 0:
             print('Processed frame {0:d} of range {1:d}:{2:d}:{3:d}.' \
-                  .format(f, start_frame, skip, end_frame))
+                  .format(f, start, skip, end))
 
     # only returns IDs for each frame if requested
     if ret_IDs:
-        frame_IDs = get_frame_IDs(bubbles_archive, start_frame, end_frame, skip)
+        frame_IDs = get_frame_IDs(bubbles_archive, start, end, skip)
         return bubbles_archive, frame_IDs
     else:
         return bubbles_archive
@@ -1261,8 +1261,8 @@ def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
 
 def test_track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
                       pix_per_um, bubbles, frame_IDs,
-                      width_border=10, start_frame=0,
-                      end_frame=-1, skip=1, num_colors=10, time_sleep=2,
+                      width_border=10, start=0,
+                      end=-1, skip=1, num_colors=10, time_sleep=2,
                       brightness=3.0, fig_size_red=0.5, save_png_folder=None,
                       show_fig=True):
     """
@@ -1271,8 +1271,8 @@ def test_track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
 #    cmap = cm.get_cmap('Spectral')
 
     # chooses end frame to be last frame if given as -1
-    if end_frame == -1:
-        end_frame = vid.count_frames(vid_filepath)
+    if end == -1:
+        end = vid.count_frames(vid_filepath)
 
     # creates figure for displaying frames with labeled bubbles
     p, im = plot.format_frame(plot.bokehfy(bkgd), pix_per_um, fig_size_red,
@@ -1280,7 +1280,7 @@ def test_track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
     if show_fig:
         show(p, notebook_handle=True)
     # loops through frames
-    for f in range(start_frame, end_frame, skip):
+    for f in range(start, end, skip):
 
         print('Analyzing frame # {0:d}.'.format(f))
         # gets value channel of frame for processing

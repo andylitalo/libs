@@ -6,6 +6,7 @@ Created on Thu May  7 08:33:41 2020
 fn.py contains useful, short, and often-used functions.
 """
 
+import os
 import cv2
 import numpy as np
 
@@ -55,7 +56,7 @@ def get_fps(vid_filepath, prefix):
 
     """
     i0 = vid_filepath.rfind('\\')
-    filename = vid_filepath[i0:]
+    filename = vid_filepath[i0+1:]
     i1 = filename.find(prefix) + len(prefix)
     i2 = filename[i1:].find('_')
     fps = int(filename[i1:i1+i2])
@@ -68,6 +69,12 @@ def is_cv3():
     """
     (major, minor, _) = cv2.__version__.split('.')
     return int(major) == 3
+
+
+def makedirs_safe(path):
+    """os.makedirs() but checks if exists first."""
+    if not os.path.isdir(path):
+        os.makedirs(path)
 
 
 def one_2_uint8(one_arr):
