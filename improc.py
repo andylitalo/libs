@@ -210,8 +210,7 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
             # or if our prediction comes from a single data point (so the
             # velocity is uncertain),
             # then the bubble object is deleted from the dictionary
-            if lost_bubble(centroid_pred, frame_labeled,
-                    bubbles_prev[ID]['frame']):
+            if lost_bubble(centroid_pred, frame_labeled, ID, bubbles_archive):
                 del bubbles_prev[ID]
             # otherwise, predicts next centroid, keeping other props the same
             else:
@@ -283,8 +282,7 @@ def assign_bubbles(frame_labeled, f, bubbles_prev, bubbles_archive, ID_curr,
             centroid_pred = bubbles_archive[ID].predict_centroid(f)
             # deletes object if centroid is out of bounds or if prediction is
             # based on just 1 data point (so velocity is uncertain)
-            if lost_bubble(centroid_pred, frame_labeled,
-                                bubbles_prev[ID]['frame']):
+            if lost_bubble(centroid_pred, frame_labeled, ID, bubbles_archive):
                 del bubbles_prev[ID]
             # otherwise, predicts next centroid, keeping other props the same
             else:
@@ -784,10 +782,10 @@ def is_on_border(bbox, im, width_border):
         return False
 
 
-def lost_bubble(centroid_pred, frame_labeled, frame_list):
+def lost_bubble(centroid_pred, frame_labeled, ID, bubbles_archive):
     """Determines if bubble is "lost" and thus not worth tracking anymore."""
     return out_of_bounds(centroid_pred, frame_labeled.shape) or \
-                    (len(frame_list) == 1)
+                    (ID not in bubbles_archive)
 
 
 def mask_im(im, mask):

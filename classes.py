@@ -113,7 +113,7 @@ class Bubble:
             if n_frames == 1:
                 inner = 1
             # unless there are more than 1 frames, in which case there is
-            # probably an error 
+            # probably an error
             else:
                 inner = -1
         elif 0 < v and v < v_inner and n_frames > 1:
@@ -165,6 +165,7 @@ class Bubble:
         a_c, b_c = np.polyfit(frames, cols, 1)
         # predicts centroid for requested frame with linear fit
         centroid_pred = (a_r*f + b_r, a_c*f + b_c)
+
         return centroid_pred
 
 
