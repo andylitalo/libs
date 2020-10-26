@@ -405,12 +405,12 @@ def bubble_d_mat(bubbles1, bubbles2, axis, v_max, row_lo, row_hi, fps):
     return d_mat
 
 
-def compute_bkgd_med(vid_filepath, num_frames=100):
+def compute_bkgd_med(vid_path, num_frames=100):
     """
     Same as compute_bkgd_med_thread() but does not use threading. More reliable
     and predictable, but slower.
     """
-    cap = cv2.VideoCapture(vid_filepath)
+    cap = cv2.VideoCapture(vid_path)
     ret, frame = cap.read()
     if not ret:
         return None
@@ -428,7 +428,7 @@ def compute_bkgd_med(vid_filepath, num_frames=100):
     return bkgd_med
 
 
-def compute_bkgd_med_thread(vid_filepath, num_frames=100):
+def compute_bkgd_med_thread(vid_path, num_frames=100):
     """
     Computes the background of a given number of frames of a video by computing
     the pixel-wise median of the specified number of frames. This method was
@@ -439,7 +439,7 @@ def compute_bkgd_med_thread(vid_filepath, num_frames=100):
 
     Parameters
     ----------
-    vid_filepath : string
+    vid_path : string
         Filepath to video for processing.
     num_frames : int, optional
         Number of frames to process. The default is 100.
@@ -453,7 +453,7 @@ def compute_bkgd_med_thread(vid_filepath, num_frames=100):
     """
     print('started')
     # initializes file video stream for threaded loading of frames
-    fvs = FileVideoStream(vid_filepath).start()
+    fvs = FileVideoStream(vid_path).start()
     print('thing happened')
     # reads first frame as input for the algorithm; must convert to float
     # to proceed through file video stream
@@ -1209,7 +1209,7 @@ def thresh_im(im, thresh=-1, c=5):
     return thresh_im
 
 
-def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
+def track_bubble(vid_path, bkgd, highlight_bubble_method, args,
                  pix_per_um, flow_dir, row_lo, row_hi,
                  v_max, min_size_reg=0, ret_IDs=False,
                  print_freq=10, width_border=10, start=0,
@@ -1230,29 +1230,29 @@ def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
     ID_curr = 0
     # chooses end frame to be last frame if given as -1
     if end == -1:
-        end = vid.count_frames(vid_filepath)
+        end = vid.count_frames(vid_path)
 
     # extracts fps from video filepath
-    fps = fn.parse_vid_filepath(vid_filepath)['fps']
+    fps = fn.parse_vid_path(vid_path)['fps']
     # loops through frames of video
     for f in range(start, end, every):
-        a0 = time.time()
+        # a0 = time.time()
         # loads frame from video file
-        frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
-        a1 = time.time()
-        print('1 {0:f} ms.'.format(1000*(a1-a0)))
+        frame, _ = vid.load_frame(vid_path, f, bokeh=False)
+        # a1 = time.time()
+        # print('1 {0:f} ms.'.format(1000*(a1-a0)))
         # extracts value channel of frame--including selem ruins segmentation
         val = get_val_channel(frame)
-        a2 = time.time()
-        print('2 {0:f} ms.'.format(1000*(a2-a1)))
+        # a2 = time.time()
+        # print('2 {0:f} ms.'.format(1000*(a2-a1)))
         # highlights bubbles in the given frame
         bubbles_bw = highlight_bubble_method(val, bkgd, *args)
-        a3 = time.time()
-        print('3 {0:f} ms.'.format(1000*(a3-a2)))
+        # a3 = time.time()
+        # print('3 {0:f} ms.'.format(1000*(a3-a2)))
         # finds bubbles and assigns IDs to track them, saving to archive
         frame_labeled = skimage.measure.label(bubbles_bw)
-        a4 = time.time()
-        print('4 {0:f} ms.'.format(1000*(a4-a3)))
+        # a4 = time.time()
+        # print('4 {0:f} ms.'.format(1000*(a4-a3)))
         ID_curr = assign_bubbles(frame_labeled, f, bubbles_prev,
                                  bubbles_archive, ID_curr, flow_dir, fps,
                                  pix_per_um, width_border, row_lo, row_hi,
@@ -1261,8 +1261,8 @@ def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
         if (f % print_freq*every) == 0:
             print('Processed frame {0:d} of range {1:d}:{2:d}:{3:d}.' \
                   .format(f, start, every, end))
-        a5 = time.time()
-        print('5 {0:f} ms.'.format(1000*(a5-a4)))
+        # a5 = time.time()
+        # print('5 {0:f} ms.'.format(1000*(a5-a4)))
     # only returns IDs for each frame if requested
     if ret_IDs:
         frame_IDs = get_frame_IDs(bubbles_archive, start, end, every)
@@ -1271,7 +1271,7 @@ def track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
         return bubbles_archive
 
 
-def test_track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
+def test_track_bubble(vid_path, bkgd, highlight_bubble_method, args,
                       pix_per_um, bubbles, frame_IDs,
                       width_border=10, start=0,
                       end=-1, every=1, num_colors=10, time_sleep=2,
@@ -1284,7 +1284,7 @@ def test_track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
 
     # chooses end frame to be last frame if given as -1
     if end == -1:
-        end = vid.count_frames(vid_filepath)
+        end = vid.count_frames(vid_path)
 
     # creates figure for displaying frames with labeled bubbles
     p, im = plot.format_frame(plot.bokehfy(bkgd), pix_per_um, fig_size_red,
@@ -1296,7 +1296,7 @@ def test_track_bubble(vid_filepath, bkgd, highlight_bubble_method, args,
 
         print('Analyzing frame # {0:d}.'.format(f))
         # gets value channel of frame for processing
-        frame, _ = vid.load_frame(vid_filepath, f, bokeh=False)
+        frame, _ = vid.load_frame(vid_path, f, bokeh=False)
         val = get_val_channel(frame)
         # processes frame
         bubble = highlight_bubble_method(val, bkgd, *args)

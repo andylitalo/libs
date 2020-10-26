@@ -572,6 +572,7 @@ if __name__=='__main__':
 def v_inner(Q_i, Q_o, eta_i, eta_o, R_o, L):
     """
     Computes the velocity at the interface between inner and outer streams.
+    Assumes SI units.
 
     Parameters
     ----------

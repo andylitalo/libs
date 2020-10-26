@@ -21,7 +21,7 @@ import improc
 
 
 
-def click_flow(im, mask_filepath, region='outer stream', save=True, check=False):
+def click_flow(im, mask_path, region='outer stream', save=True, check=False):
     """
     Same as click_flow_dir but requests two additional clicks along the other
     inner wall of the capillary (or interface of the inner stream if both inner
@@ -34,14 +34,14 @@ def click_flow(im, mask_filepath, region='outer stream', save=True, check=False)
     ----------
     im : (M x N x 3) or (M x N) numpy array of floats or uint8s
         Image that will be shown for the user to click the flow direction
-    mask_filepath : string
+    mask_path : string
         Filepath to destination of desired mask file.
     region : string, optional
         Region of image that the user should click. Default 'outer stream'.
     save : bool, optional
-        If True, will save mask data at mask_filepath. Default True.
+        If True, will save mask data at mask_path. Default True.
     check : bool, optional
-        If True and a file exists under mask_filepath, asks user to confirm
+        If True and a file exists under mask_path, asks user to confirm
         quality of existing mask before proceeding. Otherwise, existing mask is
         always used. Default False.
 
@@ -53,15 +53,16 @@ def click_flow(im, mask_filepath, region='outer stream', save=True, check=False)
         Contains coordinates of individual points (x,y) defining the vertices of
         the mask and the (M x N) array of the mask.
     """
-    mask_data = get_polygonal_mask_data(im, mask_filepath, check=check, save=save,
+    mask_data = get_polygonal_mask_data(im, mask_path, check=check, save=save,
                     msg='Click 4 vertices defining {0:s}.'.format(region) + \
                     ' First 2 clicks should be along flow direction.')
-    pts = mask_data['points']
+    verts = mask_data['vertices']
     # computes coordinates of flow vector from first two clicks
-    dx = pts[1][0]-pts[0][0]
-    dy = pts[1][1]-pts[0][1]
+    dx = verts[1][0] - verts[0][0]
+    dy = verts[1][1] - verts[0][1]
     # normalizes flow direction
     d = np.sqrt(dx**2 + dy**2)
+    # returns flow direction in (x, y) coordinates
     flow_dir = np.array([dx / d, dy / d])
 
     return flow_dir, mask_data
@@ -142,7 +143,7 @@ def click_for_next(ax, msg='Center-click for next image.'):
             break
 
 
-def click_sheath_flow(im, mask_filepath, check=False):
+def click_sheath_flow(im, mask_path, check=False):
     """
     User clicks mask for flow and mask for inner stream. The method then uses
     these to determine the flow axis and parameters for estimating velocity
@@ -152,10 +153,10 @@ def click_sheath_flow(im, mask_filepath, check=False):
     ----------
     im : (M x N x 3) or (M x N) numpy array of floats or uint8s
         Image that will be shown for the user to click the flow direction
-    mask_filepath : string
+    mask_path : string
         Filepath to destination of desired mask file.
     check : bool, optional
-        If True and a file exists under mask_filepath, asks user to confirm
+        If True and a file exists under mask_path, asks user to confirm
         quality of existing mask before proceeding. Otherwise, existing mask is
         always used. Default False.
 
@@ -168,19 +169,19 @@ def click_sheath_flow(im, mask_filepath, check=False):
     """
     # asks user to click outer stream; ignores flow direction in case inner
     # walls of capillary are not visible in the image
-    _, mask_data = click_flow(im, mask_filepath, save=False, check=check)
+    _, mask_data = click_flow(im, mask_path, save=False, check=check)
     # asks user to click inner stream
-    flow_dir_xy, inner_mask_data = click_flow(im, mask_filepath,
+    flow_dir_xy, inner_mask_data = click_flow(im, mask_path,
                                 region='inner stream', save=False, check=check)
     # flips flow direction to be row col
     flow_dir = flow_dir_xy[::-1]
     # extracts vertices of inner stream for use in defining inner stream width
-    pts_inner = inner_mask_data['points']
+    verts_inner = inner_mask_data['vertices']
     # stores inner stream properties in mask data dictionary
-    mask_data['flow dir'] = flow_dir
-    mask_data['pts inner'] = pts_inner
+    mask_data['flow_dir'] = flow_dir
+    mask_data['verts_inner'] = verts_inner
     # saves mask data
-    with open(mask_filepath, 'wb') as f:
+    with open(mask_path, 'wb') as f:
         pkl.dump(mask_data, f)
 
     return flow_dir, mask_data
@@ -330,7 +331,7 @@ def define_outer_edge(image,shapeType,message=''):
         return xyVals
 
 
-def get_rect_mask_data(im,maskFile,check=False):
+def get_rect_mask_data(im,maskFile,check=False, yes=6):
     """
     Shows user masks overlayed on given image and asks through a dialog box
     if they are acceptable. Returns True for 'yes' and False for 'no'.
@@ -350,13 +351,16 @@ def get_rect_mask_data(im,maskFile,check=False):
 
         response = ctypes.windll.user32.MessageBoxA(0, 'Do you wish to keep' + \
                             ' the current mask?','User Input Required', 4)
-        plt.close()
-        if response == 6: # 6 means yes
+
+        if response == yes: # 6 means yes
+            plt.close()
             return maskData
 
         else: # 7 means no
             print('Existing mask rejected, please create new one now.')
             maskData = mask.create_rect_mask_data(im,maskFile)
+
+    plt.close()
 
     return maskData
 
@@ -377,18 +381,25 @@ def get_polygonal_mask_data(im, mask_file, check=False, save=True,
 
     while check:
         plt.figure('Evaluate accuracy of predrawn masks for your video')
+        plt.rcParams.update({'figure.autolayout': True})
+        plt.set_cmap('gray')
         masked_image = mask.mask_image(im, mask_data['mask'])
         plt.imshow(masked_image)
+        plt.axis('image')
+        plt.axis('off')
+
         # ask if user wishes to keep current mask (header, question)
         response = messagebox.askyesno('User Input Required', 'Do you wish to keep' + \
                             ' the current mask?')
-        plt.close()
         if response:
+            plt.close()
             return mask_data
 
         else:
             print('Existing mask rejected, please create new one now.')
             mask_data = mask.create_polygonal_mask_data(im, mask_file, msg=msg)
+
+    plt.close()
 
     return mask_data
 

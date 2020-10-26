@@ -100,16 +100,21 @@ class Bubble:
         then the velocity v_inner will be computed to be nan, in which case this
         method will leave the classification as is.
         """
+        # counts number of frames in which bubble appears
+        n_frames = len(self.props_raw['frame'])
         # computes average speed [m/s] if not done so already
         if self.props_proc['average speed'] == None:
             self.proc_props()
         # classifies bubble as inner stream if velocity is greater than cutoff
         v = self.props_proc['average speed']
-        if v >= v_inner:
-            self.props_proc['inner stream'] = 1
-        # if velocity is positive but slower than cutoff, classify as outer stream
-        elif 0 < v and v < v_inner:
+        # if velocity is positive but slower than cutoff, classify as outer
+        # stream
+        if v == None or (0 < v and v < v_inner and n_frames > 1):
             self.props_proc['inner stream'] = 0
+        # if velocity is faster than lower limit for inner stream, classify as
+        # inner stream
+        elif (v >= v_inner) or (n_frames == 1):
+            self.props_proc['inner stream'] = 1
         # otherwise, default value of -1 is set to indicate unclear classification
         else:
             self.props_proc['inner stream'] = -1
@@ -124,10 +129,11 @@ class Bubble:
             i_frame = next((i for i in range(len(frames)) if frames[i] == f))
             return centroids[i_frame]
 
-        # ensures at least 2 centroids
+        # ensures at least 1 centroid
         assert len(centroids) > 0, \
                 '{0:s} requires at least one centroid.' \
                 .format(sys._getframe().f_code.co_name)
+        # ensures same number of frames as centroids
         assert len(frames) == len(centroids), \
                 '{0:s} requires equal # frames and centroids' \
                 .format(sys._getframe().f_code.co_name)
@@ -160,10 +166,10 @@ class Bubble:
         area = self.props_raw['area']
         self.props_proc['average area'] = np.mean(area)
 
-        # computes aspect ratio and average
+        # computes aspect ratio and average (max prevents divide by 0)
         self.props_proc['aspect ratio'] = [self.props_raw['major axis'][i] /  \
-                                            self.props_raw['minor axis'][i] \
-                                            for i in range(n_frames)]
+                                        max(1, self.props_raw['minor axis'][i]) \
+                                        for i in range(n_frames)]
         self.props_proc['average aspect ratio'] = np.mean( \
                                                 self.props_proc['aspect ratio'])
 
@@ -195,10 +201,12 @@ class Bubble:
         Estimates previous centroid assuming just offscreen opposite flow
         direction.
         """
+
         # extracts centroid
         row, col = centroid
         # gets opposite direction from flow
         rev_dir = -np.array(self.metadata['flow_dir'])
+
         frame_dim = self.metadata['frame_dim']
         # computes steps to boundary in row and col directions
         n_r = self.steps_to_boundary(row, frame_dim[0], rev_dir[0])

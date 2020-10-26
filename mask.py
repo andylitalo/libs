@@ -45,20 +45,22 @@ def create_polygonal_mask_data(im, maskFile, save=True, msg='click vertices'):
     """
     create mask for an image and save as pickle file
     """
-    # create mask
-    points = ui.define_outer_edge(im,'polygon',message=msg)
-    mask, points = create_polygon_mask(im, points)
+    # asks user to click vertices
+    vertices = ui.define_outer_edge(im,'polygon',message=msg)
+    # creates mask and points along boundary
+    mask, boundary = create_polygon_mask(im, vertices)
     # store mask data
-    maskData = {}
-    maskData['mask'] = mask
-    maskData['points'] = points
+    mask_data = {}
+    mask_data['mask'] = mask
+    mask_data['boundary'] = boundary
+    mask_data['vertices'] = vertices
 
     # save new mask
     if save:
         with open(maskFile,'wb') as f:
-            pkl.dump(maskData, f)
+            pkl.dump(mask_data, f)
 
-    return maskData
+    return mask_data
 
 
 def create_rect_mask_data(im,maskFile):
@@ -79,14 +81,14 @@ def create_rect_mask_data(im,maskFile):
     mask, maskPts = create_polygon_mask(im, maskVertices)
     print(mask)
     # store mask data
-    maskData = {}
-    maskData['mask'] = mask
-    maskData['xyMinMax'] = xyMinMax
+    mask_data = {}
+    mask_data['mask'] = mask
+    mask_data['xyMinMax'] = xyMinMax
     # save new mask
     with open(maskFile,'wb') as f:
-        pkl.dump(maskData, f)
+        pkl.dump(mask_data, f)
 
-    return maskData
+    return mask_data
 
 
 def get_bbox(mask_data):
@@ -96,7 +98,7 @@ def get_bbox(mask_data):
     Parameters
     ----------
     mask_data : dictionary
-        Must at minimum contain entry 'points' containing 2-tuples of ints
+        Must at minimum contain entry 'boundary' containing 2-tuples of ints
         defining the (x,y) coordinates of the points along the boundary of the
         mask.
 
@@ -106,13 +108,13 @@ def get_bbox(mask_data):
         (row_min, col_min, row_max, col_max)
     """
     # collects list of all rows and columns of points along boundary of mask
-    rows = [pt[1] for pt in mask_data['points']]
-    cols = [pt[0] for pt in mask_data['points']]
+    rows = [pt[1] for pt in mask_data['boundary']]
+    cols = [pt[0] for pt in mask_data['boundary']]
     # computes bounding box
     bbox =  (np.min(rows), np.min(cols), np.max(rows), np.max(cols))
 
     return bbox
-    
+
 
 def get_mask(X,Y,imageShape):
     """

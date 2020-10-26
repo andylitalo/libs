@@ -122,10 +122,10 @@ def extract_frame(Vid,nFrame,hMatrix=None,maskData=None,filterFrame=False,
     return frame
 
 
-def load_frame(vid_filepath, num, vert_flip=True, bokeh=True):
+def load_frame(vid_path, num, vert_flip=True, bokeh=True):
     """Loads frame from video using OpenCV and prepares for display in Bokeh."""
-    # assert num < count_frames(vid_filepath), 'Frame number in vid.load_frame() must be less than total frames.'
-    cap = cv2.VideoCapture(vid_filepath)
+    # assert num < count_frames(vid_path), 'Frame number in vid.load_frame() must be less than total frames.'
+    cap = cv2.VideoCapture(vid_path)
     frame = read_frame(cap, num)
     if bokeh:
         frame = plot.bokehfy(frame)
@@ -141,7 +141,7 @@ def read_frame(cap, num):
     return frame
 
 
-def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=True,
+def show_frame(vid_path, start_frame, pix_per_um, vert_flip=True,
                fig_size_red=0.5, brightness=1.0, show_fig=True):
     """
     vert_flip:  # code for flipping vertically with cv2.flip()
@@ -149,7 +149,7 @@ def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=True,
     # x_range is the extent shown (so it should match dw)
     # width is the width of the figure box
     """
-    frame, cap = load_frame(vid_filepath, start_frame)
+    frame, cap = load_frame(vid_path, start_frame)
     p, im = plot.format_frame(frame, pix_per_um, fig_size_red, brightness=brightness)
     if show_fig:
         show(p, notebook_handle=True)
@@ -157,7 +157,7 @@ def show_frame(vid_filepath, start_frame, pix_per_um, vert_flip=True,
     return p, im, cap
 
 
-def view_video(vid_filepath, start_frame, pix_per_um, time_sleep=0.3,
+def view_video(vid_path, start_frame, pix_per_um, time_sleep=0.3,
                brightness=1.0, vert_flip=True, show_frame_num=False,
                fig_size_red=0.5):
     """
@@ -165,7 +165,7 @@ def view_video(vid_filepath, start_frame, pix_per_um, time_sleep=0.3,
     Functions and setup were adapted from:
     https://stackoverflow.com/questions/27882255/is-it-possible-to-display-an-opencv-video-inside-the-ipython-jupyter-notebook
     """
-    p, im, cap = show_frame(vid_filepath, start_frame, pix_per_um,
+    p, im, cap = show_frame(vid_path, start_frame, pix_per_um,
                             brightness=brightness, fig_size_red=fig_size_red)
     if show_frame_num:
         f = start_frame
