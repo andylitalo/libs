@@ -814,7 +814,7 @@ def lost_bubble(centroid_pred, frame_labeled, ID, bubbles_archive):
         frames.
     """
     lost = out_of_bounds(centroid_pred, frame_labeled.shape) or \
-                    (len(bubbles_archive[ID]['frame']) < 2)
+                    (len(bubbles_archive[ID].get_props('frame')) < 2)
     return lost
 
 
