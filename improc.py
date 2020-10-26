@@ -783,9 +783,39 @@ def is_on_border(bbox, im, width_border):
 
 
 def lost_bubble(centroid_pred, frame_labeled, ID, bubbles_archive):
-    """Determines if bubble is "lost" and thus not worth tracking anymore."""
-    return out_of_bounds(centroid_pred, frame_labeled.shape) or \
-                    (ID not in bubbles_archive)
+    """
+    Determines if bubble is "lost" and thus not worth tracking anymore in the
+    case that the bubble is not detected in a frame.
+
+    The bubble is "lost" if:
+        1) the predicted location of its centroid is out of the boundaries of
+        the frame
+        2) the bubble has only been spotted once (so we don't have a good
+        estimate of where the centroid would be so it's possible it is out of
+        bounds)
+
+    Parameters
+    ----------
+    centroid_pred : 2-tuple of floats
+        (row, col) coordinates predicted for centroid of bubble (see
+        Bubble.predict_centroid())
+    frame_labeled : (M x N) numpy array of uint8
+        Frame whose pixel values are the ID numbers of the bubbles where the
+        pixels are located (0 if not part of a bubble)
+    ID : int
+        ID number of bubble assigned in assign_bubbles()
+    bubbles_archive : OrderedDict of Bubble objects
+        Dictionary of bubbles ordered by ID number
+
+    Returns
+    -------
+    lost : bool
+        If True, bubble is deemed lost. Otherwise deemed detectable in future
+        frames.
+    """
+    lost = out_of_bounds(centroid_pred, frame_labeled.shape) or \
+                    (len(bubbles_archive[ID]['frame']) < 2)
+    return lost
 
 
 def mask_im(im, mask):
