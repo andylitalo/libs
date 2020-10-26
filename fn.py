@@ -39,14 +39,14 @@ def format_float(i):
     return result
 
 
-def get_fps(vid_filepath, prefix):
+def get_fps(vid_path, prefix):
     """
-    Gets the frames per second from the filepath of the video.
+    Gets the frames per second from the path of the video.
 
     Parameters
     ----------
-    vid_filepath : string
-        Filepath to video with frames per second in characters following prefix.
+    vid_path : string
+        path to video with frames per second in characters following prefix.
     prefix : string
         prefix given to all videos before their specs, e.g., 'v360_co2_'
     Returns
@@ -55,11 +55,10 @@ def get_fps(vid_filepath, prefix):
         frames per second of video.
 
     """
-    i0 = vid_filepath.rfind('\\')
-    filename = vid_filepath[i0+1:]
-    i1 = filename.find(prefix) + len(prefix)
-    i2 = filename[i1:].find('_')
-    fps = int(filename[i1:i1+i2])
+    _, name = os.path.split(vid_path)
+    i1 = name.find(prefix) + len(prefix)
+    i2 = name[i1:].find('_')
+    fps = int(name[i1:i1+i2])
 
     return fps
 
@@ -93,9 +92,9 @@ def one_2_uint8(one_arr):
     return (255*one_arr).astype('uint8')
 
 
-def parse_vid_filepath(vid_filepath):
-    i_start = vid_filepath.rfind('\\')
-    vid_file = vid_filepath[i_start+1:]
+def parse_vid_path(vid_path):
+    i_start = vid_path.rfind('\\')
+    vid_file = vid_path[i_start+1:]
     # cuts out extension and splits by underscores
     tokens = vid_file[:-4].split('_')
     prefix = ''
@@ -118,7 +117,7 @@ def parse_vid_filepath(vid_filepath):
     return params
 
 
-def read_input_file(input_filepath, split_char='=', cmnt_char='#'):
+def read_input_file(input_path, split_char='=', cmnt_char='#'):
     """
     Loads parameters from input file for tracking bubbles.
 
@@ -149,7 +148,7 @@ def read_input_file(input_filepath, split_char='=', cmnt_char='#'):
     params = {}
 
     # opens file
-    file_obj = open(input_filepath)
+    file_obj = open(input_path)
 
     # reads in parameters from the lines of the file
     for line in file_obj:
