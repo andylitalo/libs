@@ -107,17 +107,26 @@ class Bubble:
             self.proc_props()
         # classifies bubble as inner stream if velocity is greater than cutoff
         v = self.props_proc['average speed']
-        # if velocity is positive but slower than cutoff, classify as outer
-        # stream
-        if v == None or (0 < v and v < v_inner and n_frames > 1):
-            self.props_proc['inner stream'] = 0
+        # if no velocity recorded, classifies as inner stream (assumes too fast
+        # to be part of outer stream)
+        if v == None:
+            if n_frames == 1:
+                inner = 1
+            # unless there are more than 1 frames, in which case there is
+            # probably an error 
+            else:
+                inner = -1
+        elif 0 < v and v < v_inner and n_frames > 1:
+            inner = 0
         # if velocity is faster than lower limit for inner stream, classify as
         # inner stream
         elif (v >= v_inner) or (n_frames == 1):
-            self.props_proc['inner stream'] = 1
+            inner = 1
         # otherwise, default value of -1 is set to indicate unclear classification
         else:
-            self.props_proc['inner stream'] = -1
+            inner = -1
+
+        self.props_proc['inner stream'] = inner
 
     def predict_centroid(self, f):
         """Predicts next centroid based on step sizes between previous centroids."""
