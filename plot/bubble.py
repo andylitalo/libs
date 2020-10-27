@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 # imports conversions
 from plot.conversions import *
 
-def all_props(t, t_nuc, props_list, x_log=False, y_lim=[1E-3, 1E4],
+def all_props(t, t_nuc, props_list, x_log=False, x_lim=None, y_lim=[1E-3, 1E4],
               title='Bubble of CO2 Along Channel in V360'):
     """
     Plots all properties during bubble growth trajectory. Assumes
@@ -38,6 +38,8 @@ def all_props(t, t_nuc, props_list, x_log=False, y_lim=[1E-3, 1E4],
     if x_log:
         ax.set_xscale('log')
     # formats plot
+    if x_lim is not None:
+        ax.set_xlim(x_lim)
     ax.set_ylim(y_lim)
     ax.set_xlabel(r'$t-t_{nuc}$ [ms]', fontsize=18)
     ax.set_title(title, fontsize=20)
@@ -49,7 +51,7 @@ def all_props(t, t_nuc, props_list, x_log=False, y_lim=[1E-3, 1E4],
     return ax
 
 
-def d_infl(t, t_nuc, props_list, c_s, ax):
+def d_infl(ax, t, t_nuc, props_list, c_s):
     """Plots thickness of influence volume."""
     R, m, p, p_bubble, rho_co2, if_tension = props_list
     V_infl = np.array(m)*(1/c_s + 1/np.array(rho_co2))
@@ -104,26 +106,18 @@ def legend(ax):
     plt.legend(loc='center left', fontsize=14, bbox_to_anchor=(legend_x, legend_y))
 
 
-def measured(t, t_nuc, props_list, title, t_bubble, t_bubbles, R_bubble,
-            R_bubbles, D, x_scale, x_lim, y_lim):
-    """Plots growth of individual bubble measured."""
-    # PLOTS RESULTS
-    ax = all_props(t, t_nuc, props_list, title='Fit to Bubble Measurement')
+def measured(ax, t_nuc, t_bubble, t_bubbles, R_bubble, R_bubbles, t_R=None):
+    """Plots growth of individual bubble measured. ax should come from all_props()"""
     # adds points of bubbles measured
     ax.plot((t_bubble-t_nuc)*s_2_ms, R_bubble*m_2_um, color='k', marker='o',
                 ms=6, label='fit pt')
     ax.plot((t_bubbles-t_nuc)*s_2_ms, R_bubbles*m_2_um, color='m', marker='o',
                 ms=6, label='validation pts')
-    ax.set_xscale(x_scale)
-    ax.set_yscale('log')
-    ax.set_xlim(x_lim)
-    ax.set_ylim(y_lim)
-    ax.set_xlabel('time [ms]', fontsize=18)
-    ax.set_title(title, fontsize=20)
     # print out values of model at the measured points
-    R = props_list[0]
-    print('Model prediction at fit point is R = {0:f} um.' \
-                    .format(np.interp(t_bubble, t, np.array(R)*m_2_um)))
+    if t_R is not None:
+        t, R = t_R
+        print('Model prediction at fit point is R = {0:f} um.' \
+                        .format(np.interp(t_bubble, t, np.array(R)*m_2_um)))
 
     return ax
 
