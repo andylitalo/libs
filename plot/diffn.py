@@ -28,13 +28,13 @@ def compare_sheath_Qi(d, r_arr, c_list, Q_i_list, R_i_list, R_o, v_list, c_s,
     for c, Q_i, R_i, v in zip(c_list, Q_i_list, R_i_list, v_list):
         ax.plot(r_arr*m_2_um, c, label='Qi = {0:d} uL/min, Ri = {1:d} um, ' + \
                                         't = {2:d} ms'.format(int(Q_i),
-                                        int(R_i*m_2_um), d/v*s_2_ms))
+                                        int(R_i*m_2_um), int(d/v*s_2_ms)))
 
     # formats plot
     ax.set_title('CO2 Concentraiton vs. Radius in \n' + \
                 '{0:d} um ID Capillary at {1:d} mm\n' + \
-                'vs. Inner Stream Flow Rate'.format(int(2*R_o*m_2_um), d*m_2_mm),
-                 fontsize=t_fs)
+                'vs. Inner Stream Flow Rate'.format(int(2*R_o*m_2_um),
+                int(d*m_2_mm)), fontsize=t_fs)
     ax.set_xlabel(r'$r$ [$\mu$m]', fontsize=ax_fs)
     ax.set_ylabel(r'$c_{CO2}$ [$kg$/$m^3$]', fontsize=ax_fs)
     ax.tick_params(axis='both', labelsize=tk_fs)

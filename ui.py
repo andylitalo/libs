@@ -21,7 +21,7 @@ import improc
 
 
 
-def click_flow(im, mask_path, region='outer stream', save=True, check=False):
+def click_flow(im, mask_path, region='ROI', save=True, check=False):
     """
     Same as click_flow_dir but requests two additional clicks along the other
     inner wall of the capillary (or interface of the inner stream if both inner
@@ -37,7 +37,8 @@ def click_flow(im, mask_path, region='outer stream', save=True, check=False):
     mask_path : string
         Filepath to destination of desired mask file.
     region : string, optional
-        Region of image that the user should click. Default 'outer stream'.
+        Region of image that the user should click. Default 'ROI' for "region
+        of interest," i.e., the region that will be considered in analysis.
     save : bool, optional
         If True, will save mask data at mask_path. Default True.
     check : bool, optional
