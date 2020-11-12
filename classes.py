@@ -14,7 +14,8 @@ um_2_m = 1E-6
 
 
 class Bubble:
-    def __init__(self, ID, fps, frame_dim, flow_dir, pix_per_um, props_raw=[]):
+    def __init__(self, ID, fps, frame_dim, flow_dir, pix_per_um, props_raw=[],
+                max_aspect_ratio=50):
         """
         frames: list of ints
         centroids: list of tuples of (row, col) of centroids of bubbles
@@ -28,14 +29,20 @@ class Bubble:
         average speed: float
         fps: float
 
+        max_aspect_ratio : int
+            Maximum aspect ratio of object to be classified as a bubble of the
+            inner stream. Determined by assuming smallest inner stream (~20 um)
+            and longest bubble (~1000 um).
+
         true centroid is estimated location of centroid adjusted after taking
         account of the bubble being off screen/"on border."
         """
         # stores metadata
         self.metadata = {'ID':ID, 'fps':fps, 'frame_dim':frame_dim,
-                         'flow_dir':flow_dir, 'pix_per_um':pix_per_um}
+                         'flow_dir':flow_dir, 'pix_per_um':pix_per_um,
+                         'max aspect ratio':max_aspect_ratio}
         # initializes storage of raw properties
-        self.props_raw = {'frame':[], 'centroid':[], 'area':[],'major axis':[],
+        self.props_raw = {'frame':[], 'centroid':[], 'area':[], 'major axis':[],
                           'minor axis':[], 'orientation':[], 'bbox':[],
                           'on border':[]}
         # initializes storage of processed properties
@@ -43,7 +50,7 @@ class Bubble:
                             'average area':None, 'average speed':None,
                            'average orientation':None, 'aspect ratio':[],
                            'average aspect ratio':None, 'true centroids':[],
-                           'inner stream':-1}
+                           'inner stream':-1, 'radius':[], 'average radius':None}
        # inner stream is 0 if bubble is likely in outer stream, 1 if
        # likely in inner stream, and -1 if unknown or not evaluated yet
         # loads raw properties if provided
@@ -107,9 +114,13 @@ class Bubble:
             self.proc_props()
         # classifies bubble as inner stream if velocity is greater than cutoff
         v = self.props_proc['average speed']
+
+        # if the bubble's aspect ratio is too large, classify as error (-1)
+        if self.props_proc['aspect ratio'] > self.metadata['max aspect ratio']:
+            inner = -1
         # if no velocity recorded, classifies as inner stream (assumes too fast
         # to be part of outer stream)
-        if v == None:
+        elif v == None:
             if n_frames == 1:
                 inner = 1
             # unless there are more than 1 frames, in which case there is
@@ -172,9 +183,16 @@ class Bubble:
     def proc_props(self):
         """Processes data to compute processed properties, mostly averages."""
         n_frames = len(self.props_raw['frame'])
-        # computes average area
+        # computes average area [pix^2]
         area = self.props_raw['area']
         self.props_proc['average area'] = np.mean(area)
+        # computes radius [um] as geometric mean of three diameters of the
+        # bubble divided by 8 to get radius. Assumes symmetry about major axis
+        # such that diameter in the other two dimensions is the minor axis
+        self.props_proc['radius'] = [((maj*min*min)**(1.0/3)/8) / \
+                                    self.metadata['pix_per_um'] for maj, min in\
+                                    zip(self.props_raw['major axis'], \
+                                    self.props_raw['minor axis'])]
 
         # computes aspect ratio and average (max prevents divide by 0)
         self.props_proc['aspect ratio'] = [self.props_raw['major axis'][i] /  \
@@ -211,7 +229,6 @@ class Bubble:
         Estimates previous centroid assuming just offscreen opposite flow
         direction.
         """
-
         # extracts centroid
         row, col = centroid
         # gets opposite direction from flow
