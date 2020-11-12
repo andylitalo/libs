@@ -116,7 +116,7 @@ class Bubble:
         v = self.props_proc['average speed']
 
         # if the bubble's aspect ratio is too large, classify as error (-1)
-        if self.props_proc['aspect ratio'] > self.metadata['max aspect ratio']:
+        if np.max(self.props_proc['aspect ratio']) > self.metadata['max aspect ratio']:
             inner = -1
         # if no velocity recorded, classifies as inner stream (assumes too fast
         # to be part of outer stream)
