@@ -15,7 +15,7 @@ um_2_m = 1E-6
 
 class Bubble:
     def __init__(self, ID, fps, frame_dim, flow_dir, pix_per_um, props_raw=[],
-                max_aspect_ratio=50):
+                max_aspect_ratio=10):
         """
         frames: list of ints
         centroids: list of tuples of (row, col) of centroids of bubbles
@@ -31,8 +31,8 @@ class Bubble:
 
         max_aspect_ratio : int
             Maximum aspect ratio of object to be classified as a bubble of the
-            inner stream. Determined by assuming smallest inner stream (~20 um)
-            and longest bubble (~1000 um).
+            inner stream. Estimated based on seeing streaks with aspect ratio of
+            12 and long bubbles having aspect ratio of ~5.
 
         true centroid is estimated location of centroid adjusted after taking
         account of the bubble being off screen/"on border."

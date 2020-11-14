@@ -178,6 +178,8 @@ def read_input_file(input_path, split_char='=', cmnt_char='#'):
 
 
 def split_folders(path):
+    """Suggested on http://nicks-liquid-soapbox.blogspot.com/2011/03/
+    splitting-path-to-list-in-python.html"""
     path_norm = os.path.normpath(path)
     folder_list_padded = path.split(os.path.sep)
     folder_list = [folder for folder in folder_list_padded if folder != '']
