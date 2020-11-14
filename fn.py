@@ -92,6 +92,18 @@ def one_2_uint8(one_arr):
     return (255*one_arr).astype('uint8')
 
 
+def parse_vid_folder(vid_folder):
+    """Parses video folder of format <yyyymmdd>_<p_sat>bar"""
+    # first extracts direct folder for video if others included in path
+    vid_folder_list = split_folders(vid_folder)
+    vid_folder = vid_folder_list[-1]
+    raw = vid_folder.strip('\\')
+    date, p_sat_str = raw.split('_')
+    p_sat = int(''.join([c for c in p_sat_str if c.isdigit()]))
+    p_sat_units = ''.join([c for c in p_sat_str if not c.isdigit()])
+
+    return date, p_sat, p_sat_units
+
 def parse_vid_path(vid_path):
     i_start = vid_path.rfind('\\')
     vid_file = vid_path[i_start+1:]
@@ -163,3 +175,11 @@ def read_input_file(input_path, split_char='=', cmnt_char='#'):
             params[key_value[0].strip()] = key_value[1].strip()
 
     return params
+
+
+def split_folders(path):
+    path_norm = os.path.normpath(path)
+    folder_list_padded = path.split(os.path.sep)
+    folder_list = [folder for folder in folder_list_padded if folder != '']
+
+    return folder_list
