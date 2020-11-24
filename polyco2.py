@@ -309,7 +309,10 @@ def load_c_s_arr(polyol_data_file):
 
 
 def load_D_arr(polyol_data_file):
-    """Loads arrays required for compute D(p)."""
+    """
+    Loads arrays required for computing diffusivity D [m^2/s] as a function of
+    pressure p [Pa].
+    """
     # loads thermophysical property data from file
     df = pd.read_csv(polyol_data_file) # takes up 2/3 of computing time***
     p_arr = kPa_2_Pa*df['p actual [kPa]'].to_numpy(dtype=float) # measured pressures from experiment [Pa]
