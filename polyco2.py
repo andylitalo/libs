@@ -247,7 +247,7 @@ def interp_rho_co2(eos_co2_file):
     Returns an interpolation function for the density of carbon dioxide
     according to the equation of state (data taken from
     webbook.nist.gov at desired temperature.
-    The density is returned in term of kg/m^3 as a function of pressure in Pa.
+    The density is returned in terms of kg/m^3 as a function of pressure in Pa.
     Parameters
     ----------
     eos_co2_file : string
@@ -360,3 +360,28 @@ def load_if_tension_arr(polyol_data_file, p_min=0, p_max=4E7,
 
     return np.concatenate((p_small, p_mid, p_big)), \
             np.concatenate((if_tension_small, if_tension_mid, if_tension_big))
+
+
+def load_w_co2_arr(polyol_data_file):
+    """
+    Loads arrays required for interpolating weight fraction of CO2 [w/w] as a
+    function of pressure p [Pa].
+    """
+    # loads thermophysical property data from file
+    df = pd.read_csv(polyol_data_file) # takes up 2/3 of computing time***
+    p_arr = kPa_2_Pa*df['p actual [kPa]'].to_numpy(dtype=float) # measured pressures from experiment [Pa]
+    w_co2_arr = df['solubility [w/w]'].to_numpy(dtype=float) # diff. measured by sqrt transient [m^2/s]
+    #
+    # # removes data points with missing measurements
+    # not_nan = [i for i in range(len(w_co2_arr)) if not np.isnan(w_co2_arr[i])]
+    # p_arr = p_arr[not_nan]
+    # w_co2_arr = w_co2_arr[not_nan]
+    # # concatenate 0 to pressure and saturation concentration to cover low values of p
+    # p_arr = np.concatenate((np.array([0]), p_arr))
+    # w_co2_arr = np.concatenate((np.array([0]), w_co2_arr))
+    # # orders saturation concentration in order of increasing pressure
+    # inds = np.argsort(p_arr)
+    # p_arr = p_arr[inds]
+    # w_co2_arr = w_co2_arr[inds]
+
+    return p_arr, w_co2_arr

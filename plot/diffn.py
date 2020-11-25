@@ -80,7 +80,8 @@ def sheath(t, r_arr, c, R_i, R_o, v, c_s, n_plot, ax=None, t_fs=18,
         ax.plot(r_arr*m_2_um, c[i], label='t = {0:d} ms, d = {1:d} mm' \
                 .format(int(t[i]*s_2_ms), int(v*t[i]*m_2_mm)))
     # plots vertical dashed line marking inner radius
-    ax.plot([R_i*m_2_um, R_i*m_2_um], y_lim, 'k--', label=r'$R_i$')
+    ax.plot([R_i*m_2_um, R_i*m_2_um], y_lim, 'k--', label=r'$R_i$' + \
+                ' = {0:d} '.format(int(R_i*m_2_um)) + r'$\mu$m')
 
     # formats plot
     ax.set_title('Diffusion of CO2 from Inner to Outer Stream\n' + \
