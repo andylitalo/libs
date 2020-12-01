@@ -11,9 +11,19 @@ import matplotlib.pyplot as plt
 
 
 
+def legend(ax):
+    """Adds legend outside box."""
+    # puts legend outside of plot box
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width, box.height])
+    legend_x = 1
+    legend_y = 0.5
+    plt.legend(loc='center left', fontsize=14, bbox_to_anchor=(legend_x, legend_y))
+
+    
 def no_ticks(image):
     """
-    This removes tick marks and numbers from the axes of the image and fills 
+    This removes tick marks and numbers from the axes of the image and fills
     up the figure window so the image is easier to see.
     """
     plt.imshow(image)

@@ -8,6 +8,9 @@ Methods for plotting related to bubble growth.
 import numpy as np
 import matplotlib.pyplot as plt
 
+# imports custom libraries
+import plot.genl as pltg
+
 # imports conversions
 from plot.conversions import *
 
@@ -46,7 +49,7 @@ def all_props(t, t_nuc, props_list, x_log=False, x_lim=None, y_lim=[1E-3, 1E4],
     ax.tick_params(axis='both', labelsize=12)
 
     # puts legend outside of plot box
-    legend(ax)
+    pltg.legend(ax)
 
     return ax
 
@@ -94,16 +97,6 @@ def diff(x_list, y_list, label_list, x_shift, x_conv, y_conv, x_label,
 
     return series(x_diff_list, y_diff_list, label_list, x_shift, x_conv, y_conv,
                   x_label, y_label, title, x_log=x_log, y_log=y_log)
-
-
-def legend(ax):
-    """Adds legend outside box."""
-    # puts legend outside of plot box
-    box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width, box.height])
-    legend_x = 1
-    legend_y = 0.5
-    plt.legend(loc='center left', fontsize=14, bbox_to_anchor=(legend_x, legend_y))
 
 
 def measured(ax, t_nuc, t_bubble, t_bubbles, R_bubble, R_bubbles, t_R=None):
