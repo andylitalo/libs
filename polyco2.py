@@ -23,8 +23,6 @@ gmL_2_kgm3 = 1000
 cm2s_2_m2s = 1E-4
 
 
-
-
 def calc_c_s(p, polyol_data_file):
     """
     Estimates the saturation concentration of CO2 in a polyol solution using
