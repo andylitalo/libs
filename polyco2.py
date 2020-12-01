@@ -228,6 +228,19 @@ def calc_dDdc(c, dc, polyol_data_file):
     return dDdc
 
 
+def calc_dDdc_fn(c, dc, D_params, D_fn):
+    """
+    Computes dD/dc given a functional form to estimate D(c).
+    """
+    # computes diffusivity at given concentration and one step size away [m^2/s]
+    D1 = D_fn(c, D_params)
+    D2 = D_fn(c + dc, D_params)
+    # computes dD/dc using forward difference formula [m^2/s / kg/m^3]
+    dDdc = (D2 - D1) / dc
+
+    return dDdc
+
+
 def calc_dDdc_raw(c, dc, c_s_arr, p_s_arr, p_arr, D_sqrt_arr, D_exp_arr):
     """
     """
@@ -239,6 +252,14 @@ def calc_dDdc_raw(c, dc, c_s_arr, p_s_arr, p_arr, D_sqrt_arr, D_exp_arr):
 
     return dDdc
 
+
+def calc_D_lin(c, D_params):
+    """
+    Estimates diffusivity [m^2/s] as a function of the concentration c [kg/m^3]
+    assuming a linear model (parameters obtained from lin_fit_D_c()).
+    """
+    a, b = D_params
+    return a*c + b
 
 def interp_rho_co2(eos_co2_file):
     """
@@ -271,6 +292,30 @@ def interp_rho_co2(eos_co2_file):
                                        fill_value=(rho_min, rho_max))
 
     return f_rho_co2
+
+
+def lin_fit_D_c(c_s_arr, p_s_arr, p_arr, D_exp_arr, D_sqrt_arr):
+    """
+    Returns coefficients of linear fit of D(c).
+    """
+    # only uses squareroot fit for D since it looks more reliable
+    # (see 20201125_jak_diffn.ppt, final slide)
+    D_arr = D_sqrt_arr
+
+    # only considers pressurization measurements since depressurization appeared
+    # to be too fast in some cases and resulted in much higher estimates of D
+    i_max = np.argmax(p_arr)
+    p_fit = p_arr[:i_max+1]
+    D_fit = D_arr[:i_max+1]
+
+    # interpolates corresponding concentrations [kg/m^3]
+    # TODO check that pressures are within range of p_fit
+    c_fit = np.interp(p_fit, p_s_arr, c_s_arr)
+
+    # computes linear fit
+    a, b = np.polyfit(c_fit, D_fit, 1)
+
+    return a, b
 
 
 def load_c_s_arr(polyol_data_file):
