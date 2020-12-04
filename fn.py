@@ -177,6 +177,15 @@ def read_input_file(input_path, split_char='=', cmnt_char='#'):
     return params
 
 
+def remove_nans(arr):
+    """
+    Removes nans from array and returns indices of elements that are not nans.
+    """
+    not_nan = [i for i in range(len(arr)) if not np.isnan(arr[i])]
+
+    return not_nan, arr[not_nan]
+    
+
 def split_folders(path):
     """Suggested on http://nicks-liquid-soapbox.blogspot.com/2011/03/
     splitting-path-to-list-in-python.html"""

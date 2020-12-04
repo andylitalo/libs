@@ -15,6 +15,9 @@ import scipy.interpolate
 import scipy.optimize
 import pandas as pd
 
+# imports custom libraries
+import fn
+
 # CONVERSIONS
 s_2_ms = 1000
 m_2_um = 1E6
@@ -301,6 +304,13 @@ def lin_fit_D_c(c_s_arr, p_s_arr, p_arr, D_exp_arr, D_sqrt_arr):
     # only uses squareroot fit for D since it looks more reliable
     # (see 20201125_jak_diffn.ppt, final slide)
     D_arr = D_sqrt_arr
+
+    # removes missing entries for pressure (nans)
+    not_nan, p_arr = fn.remove_nans(p_arr)
+    D_arr = D_arr[not_nan]
+    # removes missing entries for concentration (nans)
+    not_nan, c_s_arr = fn.remove_nans(c_s_arr)
+    p_s_arr = p_s_arr[not_nan]
 
     # only considers pressurization measurements since depressurization appeared
     # to be too fast in some cases and resulted in much higher estimates of D
