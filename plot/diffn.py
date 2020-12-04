@@ -59,7 +59,7 @@ def get_color(cmap_name, val, val_list):
     return cmap(num/den)
 
 
-def sheath(t, r_arr, c, R_i, R_o, v, c_s, n_plot, ax=None, t_fs=18,
+def sheath(t, r_arr_, c, R_i, R_o, v, c_s, n_plot, ax=None, t_fs=18,
                     ax_fs=16, tk_fs=14, l_fs=12):
     """Plots diffusion from inner stream to outer stream in sheath flow."""
     if ax is None:
@@ -77,6 +77,13 @@ def sheath(t, r_arr, c, R_i, R_o, v, c_s, n_plot, ax=None, t_fs=18,
 
     # plots CO2 concentration profile at evenly spaced time points
     for i in range(0, n_steps, skip):
+        # in case grid changes and a list of different grids is provided,
+        # extracts the corresponding grid
+        if isinstance(r_arr_, list):
+            r_arr = r_arr_[i]
+        # otherwise, uses single provided grid
+        else:
+            r_arr = r_arr_
         ax.plot(r_arr*m_2_um, c[i], label='t = {0:.6f} ms, d = {1:d} mm' \
                 .format(t[i]*s_2_ms, int(v*t[i]*m_2_mm)))
     # plots vertical dashed line marking inner radius
