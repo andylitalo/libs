@@ -8,7 +8,13 @@ to be used within the functions of the library.
 """
 
 import matplotlib.pyplot as plt
+import numpy as np
 
+
+def get_colors(cmap_name, n):
+    """Returns list of colors using given colormap."""
+    cmap = plt.get_cmap(cmap_name)
+    return [cmap(val) for val in np.linspace(0, 1, n)]
 
 
 def legend(ax):
@@ -20,7 +26,7 @@ def legend(ax):
     legend_y = 0.5
     plt.legend(loc='center left', fontsize=14, bbox_to_anchor=(legend_x, legend_y))
 
-    
+
 def no_ticks(image):
     """
     This removes tick marks and numbers from the axes of the image and fills

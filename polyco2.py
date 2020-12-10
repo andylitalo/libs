@@ -231,13 +231,13 @@ def calc_dDdc(c, dc, polyol_data_file):
     return dDdc
 
 
-def calc_dDdc_fn(c, dc, D_params, D_fn):
+def calc_dDdc_fn(c, dc, D_fn):
     """
     Computes dD/dc given a functional form to estimate D(c).
     """
     # computes diffusivity at given concentration and one step size away [m^2/s]
-    D1 = D_fn(c, D_params)
-    D2 = D_fn(c + dc, D_params)
+    D1 = D_fn(c)
+    D2 = D_fn(c + dc)
     # computes dD/dc using forward difference formula [m^2/s / kg/m^3]
     dDdc = (D2 - D1) / dc
 
@@ -328,7 +328,7 @@ def lin_fit_D_c(c_s_arr, p_s_arr, p_arr, D_exp_arr, D_sqrt_arr):
     return a, b
 
 
-def load_c_s_arr(polyol_data_file):
+def load_c_s_arr(polyol_data_file, sort=True):
     """
     Estimates arrays of values of solubility for different pressures using
     measurements of solubility and specific volume from G-ADSA.
@@ -338,6 +338,8 @@ def load_c_s_arr(polyol_data_file):
     we are just trying to make some rough estimates as a demonstration of this
     method right now. More precise measurements in the future will require
     a different approach).
+
+    Units are kg/m^3 of CO2 per polyol-CO2 solution.
     """
     # loads thermophysical property data from file
     df = pd.read_csv(polyol_data_file)
@@ -356,9 +358,12 @@ def load_c_s_arr(polyol_data_file):
     p_arr = np.concatenate((np.array([0]), p_arr))
     c_s_arr = np.concatenate((np.array([0]), c_s_arr))
     # orders saturation concentration in order of increasing pressure
-    inds = np.argsort(p_arr)
+    if sort:
+        inds = np.argsort(p_arr)
+        p_arr = p_arr[inds]
+        c_s_arr = c_s_arr[inds]
 
-    return p_arr[inds], c_s_arr[inds]
+    return p_arr, c_s_arr
 
 
 def load_D_arr(polyol_data_file):
