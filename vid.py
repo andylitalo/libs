@@ -54,13 +54,15 @@ def count_frames(path, override=False):
     is robust to the errors that may be encountered based on what
     dependencies the user has installed.
 
-    Parameters:
-        path : string
-            Direction to file of video whose frames we want to count
-        override : bool (default = False)
-            Uses slower, manual counting if set to True
+    Parameters
+    ----------
+    path : string
+        Direction to file of video whose frames we want to count
+    override : bool (default = False)
+        Uses slower, manual counting if set to True
 
-    Returns:
+    Returns
+    -------
     n_frames : int
         Number of frames in the video. -1 is passed if fails completely.
     """
