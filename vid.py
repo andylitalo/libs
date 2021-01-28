@@ -20,6 +20,31 @@ import plot.improc as plot
 
 
 
+def check_frames(vid_path, n):
+    """
+    Checks if frame number n is within range of frames in the video at vid_path.
+
+    Parameters
+    ----------
+    vid_path : string
+        Filepath to video
+    n : int
+        Frame number to check (0-indexed)
+
+    Returns
+    -------
+    contains_frame : bool
+        True if video has at least n frames; False otherwise
+    """
+    n_frames = count_frames(vid_path)
+    contains_frame = n < n_frames
+    if not contains_frame:
+        print('{0:d}th frame requested, but only {1:d} frames available.' \
+                .format(n, n_frames)))
+
+    return contains_frame
+
+
 def count_frames(path, override=False):
     """
     This method comes from https://www.pyimagesearch.com/2017/01/09/
