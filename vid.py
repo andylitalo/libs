@@ -40,7 +40,7 @@ def check_frames(vid_path, n):
     contains_frame = n < n_frames
     if not contains_frame:
         print('{0:d}th frame requested, but only {1:d} frames available.' \
-                .format(n, n_frames)))
+                .format(n, n_frames))
 
     return contains_frame
 
